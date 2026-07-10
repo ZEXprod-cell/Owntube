@@ -8,7 +8,7 @@
 
   // Адрес сервера вычисляем динамически: с какого хоста открыт сайт (ПК или телефон
   // в локальной сети), на тот же хост и стучимся, просто на порт 3001
-  const API = `${location.protocol}//${location.hostname}:3001`;
+  const API = 'http://localhost:3001';
 
   const navBtn = document.getElementById('serverLibBtn');
   const page = document.getElementById('serverLibPage');

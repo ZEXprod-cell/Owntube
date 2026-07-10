@@ -10,7 +10,11 @@ const libraryRoutes = require('./routes/library');
 
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(compression());              // gzip — JSON библиотеки в разы легче
 app.use(express.json({ limit: '10mb' }));
 

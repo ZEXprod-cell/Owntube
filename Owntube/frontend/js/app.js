@@ -1435,9 +1435,17 @@ async function renderArtistPage(artistName,allTracks){
     `${COVERS_BASE}/${encodeURIComponent(artistName)}_banner.jpg`,
   ];
   let bannerIdx=0;
+  let heroCopy=null;
   const tryNextBanner=()=>{
     if(bannerIdx<tryBannerUrls.length){bannerImg.src=tryBannerUrls[bannerIdx++];bannerImg.onerror=tryNextBanner;}
-    else{bannerWrap.style.display='none';}
+    else{
+      bannerWrap.style.display='none';
+      heroCopy=document.createElement('div');
+      heroCopy.className='artist-hero';
+      heroCopy.style.cssText='position:static;padding:20px 24px 0;margin-bottom:0;';
+      heroCopy.innerHTML=hero.innerHTML;
+      page.insertBefore(heroCopy,page.children[1]||null);
+    }
   };
   tryNextBanner();
   const overlay=document.createElement('div');overlay.className='artist-banner-overlay';
@@ -1462,22 +1470,7 @@ async function renderArtistPage(artistName,allTracks){
   banner.appendChild(hero);
   bannerWrap.appendChild(banner);
 
-  // если баннер не загрузился — показываем hero отдельно над контентом
-  let heroCopy=null;
-  const tryNextBanner=()=>{
-    if(bannerIdx<tryBannerUrls.length){bannerImg.src=tryBannerUrls[bannerIdx++];bannerImg.onerror=tryNextBanner;}
-    else{
-      // нет картинки баннера — скрываем wrap, hero выносим отдельно
-      bannerWrap.style.display='none';
-      heroCopy=document.createElement('div');
-      heroCopy.className='artist-hero';
-      heroCopy.style.cssText='position:static;padding:20px 24px 0;margin-bottom:0;';
-      heroCopy.innerHTML=hero.innerHTML;
-      page.insertBefore(heroCopy,page.children[1]||null);
-    }
-  };
-  tryNextBanner();
- 
+
   const secTitle=document.createElement('div');secTitle.className='artist-section-title';secTitle.textContent='Альбомы';
   const albumsRow=document.createElement('div');albumsRow.className='artist-albums-row';
   [...alMap.keys()].sort().forEach(album=>{
