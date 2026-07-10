@@ -692,7 +692,7 @@ function initEvents(){
  
   document.getElementById('searchBtn').onclick=()=>{
     const q=document.getElementById('searchIn').value.trim();
-    if(curPage==='music')renderMusicPage('artists', null, null, q);
+    if(curPage==='music')renderMusicPage(MS.mode,MS.artist,MS.album,q);
     else if(curPage==='downloader'){}
     else renderPage();
   };
@@ -782,7 +782,7 @@ function initSearch(){
     if (e.key !== 'Enter') return;
     const q = inp.value.trim();
     if (curPage === 'music') {
-      renderMusicPage(q ? 'artists' : MS.mode, MS.artist, MS.album, q);
+      renderMusicPage(q ? 'tracks_all' : MS.mode, MS.artist, MS.album, q);
     } else if (curPage !== 'downloader') {
       videoPage=0;renderPage();
     }
