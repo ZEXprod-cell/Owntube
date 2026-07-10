@@ -1326,7 +1326,7 @@ async function renderMusicPage(mode='artists', artistFilter=null, albumFilter=nu
     const cont=document.createElement('div');cont.style.cssText='display:flex;flex-wrap:wrap;gap:16px;';
     [...alMap.keys()].sort().forEach(album=>{
       const tracks=alMap.get(album);
-      const card=document.createElement('div');card.className='artist-card';card.style.width='180px';
+      const card=document.createElement('div');card.className='artist-card';
       const u = getAlbumCover(tracks);
       const artDiv=document.createElement('div');
       artDiv.style.cssText='width:100%;max-width:160px;aspect-ratio:1;border-radius:12px;margin-bottom:12px;overflow:hidden;background:#1e1e1e;display:flex;align-items:center;justify-content:center;font-size:48px;flex-shrink:0;';
