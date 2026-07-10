@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Owntube</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0f0f0f;--s:#1a1a1a;--c:#252525;--a:#00ff85;--a2:#00cc6a;--t:#fff;--t2:#aaa;--b:#333;--r:12px;--side-w:240px;--hdr-h:56px;--mbar-h:90px}
+body{background:var(--bg);color:var(--t);font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;overflow-x:hidden}
+button{font-family:inherit;cursor:pointer}
+::-webkit-scrollbar{width:8px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:#444;border-radius:4px}
+.hdr{position:fixed;top:0;left:0;right:0;height:var(--hdr-h);z-index:100;background:#0a0a0a;border-bottom:1px solid var(--b);display:flex;align-items:center;padding:0 16px;gap:16px}
+.logo{display:flex;align-items:center;gap:10px;font-size:22px;font-weight:800;color:var(--a);min-width:180px;cursor:pointer}
+.logo-ico{width:36px;height:26px;background:var(--a);border-radius:6px;display:flex;align-items:center;justify-content:center;color:#000;font-size:14px;font-weight:bold}
+.srch{flex:1;max-width:640px;background:var(--s);border:1px solid var(--b);border-radius:40px;display:flex;overflow:hidden;transition:border .2s}
+.srch:focus-within{border-color:var(--a)}
+.srch input{flex:1;background:0 0;border:none;color:#fff;padding:10px 20px;font-size:16px;outline:0}
+.srch input::placeholder{color:#666}
+.srch-btn{background:#222;border:none;color:var(--a);width:60px;font-size:18px;transition:background .2s}
+.srch-btn:hover{background:#333}
+.side{position:fixed;left:0;top:var(--hdr-h);bottom:0;width:var(--side-w);background:var(--bg);border-right:1px solid var(--b);padding:8px;overflow-y:auto;z-index:50;display:flex;flex-direction:column;align-items:center}
+.si{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:10px;cursor:pointer;color:var(--t2);font-size:14px;transition:.15s;overflow:hidden;width:100%}
+.si:hover,.si.on{background:#272727;color:#fff}
+.si.on{font-weight:500}
+.si-ico{width:30px;height:30px;border-radius:8px;object-fit:cover;background:#333;flex-shrink:0;display:block}
+.si-label{white-space:nowrap}
+.sd{height:1px;background:var(--b);margin:8px 14px;width:calc(100% - 28px)}
+.st{padding:8px 14px;font-size:13px;color:var(--t2);font-weight:500;width:100%}
+.main{margin-left:var(--side-w);margin-top:var(--hdr-h);padding:20px 24px}
+.notice{display:none;background:linear-gradient(135deg,#0a2a0a,#0a1a0a);border:1px solid #1a4a1a;border-radius:10px;padding:14px 20px;margin-bottom:20px;align-items:center;gap:12px;flex-wrap:wrap}
+.notice.show{display:flex}
+.notice-text{flex:1;color:var(--a);font-size:14px}
+.notice-btn{background:var(--a);color:#000;border:none;padding:8px 20px;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer}
+.notice-btn:hover{background:var(--a2)}
+.tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.tab{padding:6px 14px;border-radius:20px;font-size:13px;cursor:pointer;background:var(--s);color:var(--t2);border:1px solid var(--b);transition:.15s}
+.tab:hover,.tab.on{background:var(--a);color:#000;border-color:var(--a)}
+.pgb{height:3px;background:var(--a);border-radius:2px;transition:transform .4s;transform-origin:left;margin-bottom:16px;transform:scaleX(0)}
+.vg{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.vc{flex:0 0 auto;border-radius:var(--r);transition:transform .2s;background:var(--c);overflow:hidden;cursor:pointer;width:240px}
+.vc:hover{transform:translateY(-4px)}
+.vc.vert{width:160px}
+.ct{position:relative;aspect-ratio:16/9;background:#111;overflow:hidden}
+.ct.vert{aspect-ratio:9/16;max-height:200px}
+.ct img{width:100%;height:100%;object-fit:cover;display:block}
+.cd{position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.85);padding:2px 6px;border-radius:4px;font-size:12px;font-weight:500}
+.ct-badge{position:absolute;top:6px;left:6px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500}
+.ct-badge.ok{background:rgba(0,255,133,.9);color:#000}
+.replay-icon{position:absolute;bottom:6px;left:6px;background:rgba(0,0,0,.7);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff;cursor:pointer;transition:.2s;border:1px solid rgba(255,255,255,.2)}
+.replay-icon:hover{background:rgba(255,255,255,.2);transform:scale(1.1)}
+.ci{padding:10px 12px}
+.cit{font-size:14px;font-weight:500;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cm{font-size:12px;color:var(--t2);margin-top:4px}
+.welcome{text-align:center;padding:60px 20px;color:var(--t2);width:100%}
+.welcome h2{color:#fff;font-size:28px;margin:16px 0 8px}
+.welcome p{font-size:16px}
+.welcome .big-btn{margin-top:20px;background:var(--a);color:#000;border:none;padding:14px 28px;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer}
+.not-found{text-align:center;padding:60px 20px;color:var(--t2);width:100%}
+.not-found h3{color:#fff;font-size:24px;margin-bottom:8px}
+.vp{display:none;margin-left:var(--side-w);margin-top:var(--hdr-h);padding:20px 24px;max-width:1400px}
+.vp.on{display:flex;gap:24px}
+/* Отдельный портретный плеер для вертикальных видео (TikTok-style): узкий, по центру, видео ограничено по высоте экрана */
+.vp.vp-vertical{max-width:1400px}
+.vp.vp-vertical .ps{flex:none;width:min(420px,100%);margin:0 auto}
+.vp.vp-vertical .pb{aspect-ratio:9/16;max-height:calc(100vh - var(--hdr-h) - 40px);width:auto;height:100%;margin:0 auto;background:#000}
+.vp.vp-vertical .pb video{width:100%;height:100%;object-fit:contain}
+.vp.vp-vertical .rec{display:none} /* в портретном режиме рекомендации скрыты — как в вертикальных лентах */
+.ps{flex:2;min-width:0}
+.pb{background:#000;border-radius:var(--r);overflow:hidden;position:relative}
+.pb:fullscreen{border-radius:0;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}
+.pb:fullscreen video{width:100%;height:100%;object-fit:contain}
+.pb:-webkit-full-screen{border-radius:0;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}
+.pb:-webkit-full-screen video{width:100%;height:100%;object-fit:contain}
+.pb video{width:100%;display:block;cursor:pointer}
+.pc{position:absolute;left:0;right:0;bottom:0;padding:10px 14px 12px;background:linear-gradient(to top,rgba(0,0,0,.85),rgba(0,0,0,.4) 70%,transparent);opacity:0;transform:translateY(6px);transition:opacity .2s,transform .2s;pointer-events:none}
+.pc.show{opacity:1;transform:translateY(0);pointer-events:auto}
+.pb.no-cursor{cursor:none}
+.pc-progress{position:relative;height:4px;border-radius:2px;background:rgba(255,255,255,.25);cursor:pointer;margin-bottom:10px;transition:height .12s}
+.pc-progress:hover{height:6px}
+.pc-progress-buf{position:absolute;top:0;left:0;height:100%;background:rgba(255,255,255,.35);border-radius:2px;width:0%}
+.pc-progress-played{position:absolute;top:0;left:0;height:100%;background:var(--a);border-radius:2px;width:0%}
+.pc-progress-dot{position:absolute;top:50%;left:0%;width:12px;height:12px;background:var(--a);border-radius:50%;transform:translate(-50%,-50%);opacity:0;transition:opacity .12s;box-shadow:0 0 0 4px rgba(0,255,133,.2)}
+.pc-progress:hover .pc-progress-dot{opacity:1}
+.pc-row{display:flex;align-items:center;gap:6px}
+.pc-btn{background:transparent;border:none;color:#fff;cursor:pointer;width:34px;height:34px;border-radius:6px;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s;flex-shrink:0}
+.pc-btn:hover{background:rgba(255,255,255,.12);color:var(--a)}
+.pc-vol-slider{width:70px;accent-color:var(--a);cursor:pointer}
+.pc-time{color:#fff;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap;margin-left:4px}
+.pc-spacer{flex:1}
+@media(max-width:700px){.pc-vol-slider{display:none}}
+.pb video{width:100%;display:block;max-height:70vh;outline:0}
+.vi{margin-top:16px}
+.vi h1{font-size:20px;line-height:1.4;margin:8px 0}
+.vi .mr{color:var(--t2);font-size:13px;display:flex;gap:16px;flex-wrap:wrap}
+.var{display:flex;gap:8px;margin-top:12px}
+.end-screen{display:none;position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.95));padding:20px;z-index:10}
+.end-screen.show{display:block}
+.end-title{font-size:14px;font-weight:600;margin-bottom:10px;color:var(--a)}
+.end-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.end-card{background:var(--s);border-radius:8px;overflow:hidden;cursor:pointer;border:1px solid transparent;transition:.15s;padding:6px}
+.end-card:hover{border-color:var(--a)}
+.end-card img{width:100%;height:90px;object-fit:cover;border-radius:6px;margin-bottom:6px}
+.end-card h4{font-size:11px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rec{flex:1;min-width:320px;max-width:400px}
+.rec h3{margin-bottom:16px}
+.rc{display:flex;gap:10px;padding:6px;border-radius:8px;cursor:pointer;transition:.15s;align-items:center}
+.rc:hover{background:#272727}
+.ri{flex:1;min-width:0}
+.ri h4{font-size:13px;font-weight:500;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ri p{font-size:12px;color:var(--t2);margin-top:2px}
+.rc-thumb{width:72px;height:45px;border-radius:6px;object-fit:cover;background:#222;flex-shrink:0}
+.cmt{display:flex;gap:12px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--b)}
+.cmt-av{width:36px;height:36px;border-radius:50%;background:var(--a);display:flex;align-items:center;justify-content:center;color:#000;font-weight:700;flex-shrink:0;font-size:14px}
+.cmt-body{flex:1}
+.cmt-hdr{display:flex;gap:8px;margin-bottom:4px;align-items:baseline}
+.cmt-hdr strong{font-size:14px}
+.cmt-hdr small{color:var(--t2);font-size:12px}
+.cmt-txt{font-size:14px;line-height:1.4}
+.mo{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:200;opacity:0;pointer-events:none;transition:.3s;backdrop-filter:blur(4px)}
+.mo.on{opacity:1;pointer-events:all}
+.ml{background:var(--s);border-radius:var(--r);padding:32px;max-width:560px;width:90%;max-height:80vh;overflow-y:auto}
+.ml h2{margin-bottom:16px}
+.json-preview{background:#0a0a0a;border:1px solid var(--b);border-radius:6px;padding:10px;font-family:monospace;font-size:11px;color:var(--t2);max-height:200px;overflow:auto;margin:12px 0;white-space:pre-wrap;word-break:break-all}
+.toggle-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--b)}
+.toggle-row label{flex:1;font-size:14px;color:var(--t);cursor:pointer}
+.toggle-row small{font-size:11px;color:var(--t2);display:block;margin-top:2px}
+.toggle-sw{position:relative;width:44px;height:24px;flex-shrink:0}
+.toggle-sw input{opacity:0;position:absolute;inset:0;width:100%;height:100%;margin:0;cursor:pointer;z-index:1}
+.toggle-sw .slider{position:absolute;inset:0;background:#444;border-radius:12px;transition:.2s;cursor:pointer}
+.toggle-sw .slider:before{content:'';position:absolute;width:18px;height:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+.toggle-sw input:checked+.slider{background:var(--a)}
+.toggle-sw input:checked+.slider:before{transform:translateX(20px)}
+
+/* ── MUSIC PAGE ── */
+.music-page{display:none;margin-left:var(--side-w);margin-top:var(--hdr-h);padding:0;flex-direction:column;height:calc(100vh - var(--hdr-h));overflow:hidden}
+.music-page.on{display:flex}
+.music-top{flex:1;display:flex;overflow:hidden}
+.music-lib{flex:1;padding:20px 24px;overflow-y:auto;min-width:0}
+.music-lib-header{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.music-lib-header h2{font-size:18px;font-weight:700;flex:1}
+.music-connect-btn{background:var(--a);color:#000;border:none;padding:8px 16px;border-radius:8px;font-weight:600;font-size:13px;cursor:pointer;transition:background .2s;white-space:nowrap}
+.music-connect-btn:hover{background:var(--a2)}
+.music-grid{display:flex;flex-wrap:wrap;gap:16px;margin-top:8px}
+.mc{flex:0 0 auto;width:170px;background:var(--c);border-radius:10px;overflow:hidden;cursor:pointer;transition:transform .18s,box-shadow .18s;position:relative}
+.mc:hover{transform:translateY(-4px);box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.mc.playing{outline:2px solid var(--a);outline-offset:2px}
+.mc-art{position:relative;width:170px;height:170px;background:#1e1e1e;overflow:hidden;flex-shrink:0}
+.mc-art img{width:100%;height:100%;object-fit:cover;object-position:center;display:block}
+.mc-art-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:52px;background:linear-gradient(135deg,#1a2a1a,#1a1a2a)}
+.mc-art .mc-play-ov{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s}
+.mc:hover .mc-play-ov,.mc.playing .mc-play-ov{opacity:1}
+.mc-play-ov span{font-size:36px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
+.mc-info{padding:10px 12px}
+.mc-title{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mc-artist{font-size:11px;color:var(--t2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.music-empty{text-align:center;padding:60px 20px;color:var(--t2);width:100%}
+.music-empty h3{color:#fff;font-size:22px;margin-bottom:8px}
+.music-nav{display:flex;align-items:center;gap:6px;margin-bottom:14px;font-size:13px;color:var(--t2);flex-wrap:wrap}
+.music-nav .crumb{cursor:pointer;color:var(--a);text-decoration:underline}
+.music-nav .crumb:hover{color:#fff}
+.music-nav .sep{color:var(--b)}
+.artist-card{background:var(--c);border-radius:12px;padding:16px;cursor:pointer;transition:.15s;text-align:center;width:100%;display:flex;flex-direction:column;align-items:center}
+.artist-card:hover{background:#2a2a2a;transform:translateY(-3px)}
+.artist-avatar{width:100px;height:100px;border-radius:50%;margin:0 auto 10px;overflow:hidden;background:#1e1e1e;display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0}
+.artist-name{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;width:100%}
+.artist-count{font-size:11px;color:var(--t2);margin-top:3px;text-align:center;width:100%}
+
+/* ── MUSIC PLAYER BAR ── */
+.mbar{position:fixed;left:var(--side-w);right:0;bottom:calc(-1 * var(--mbar-h));height:var(--mbar-h);background:#111;border-top:1px solid var(--b);padding:12px 24px;display:flex;align-items:center;gap:16px;z-index:90;transition:bottom .35s cubic-bezier(.4,0,.2,1)}
+.mbar.active{bottom:0}
+.mbar-tab{position:fixed;right:0;bottom:calc(var(--mbar-h) - 90px + 4px);width:28px;height:52px;background:#161616;border:1px solid var(--b);border-right:none;border-radius:8px 0 0 8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--t2);font-size:13px;writing-mode:vertical-rl;letter-spacing:2px;z-index:91;transition:bottom .35s cubic-bezier(.4,0,.2,1),color .15s,background .15s;user-select:none}
+.mbar-tab:hover{background:#222;color:#fff}
+.mbar-tab.active{bottom:var(--mbar-h)}
+.mbar-art{width:56px;height:56px;border-radius:8px;background:#1e1e1e;overflow:hidden;flex-shrink:0}
+.mbar-art img{width:100%;height:100%;object-fit:cover;display:block}
+.mbar-art-ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:24px}
+.mbar-meta{min-width:0;flex:0 0 200px}
+.mbar-title{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mbar-artist{font-size:12px;color:var(--t2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mbar-center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-width:0;max-width:620px}
+.mbar-btns{display:flex;align-items:center;justify-content:center;gap:12px}
+.mbtn{background:none;border:none;color:var(--t2);font-size:20px;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:.15s;cursor:pointer}
+.mbtn:hover{background:#272727;color:#fff}
+.mbtn.active{color:var(--a)}
+/* Состояния лайка/дизлайка для кнопок плеера */
+.mbtn.liked{color:#ff4d6d}
+.mbtn.disliked{color:#4d9fff}
+.mbtn-play{background:var(--a)!important;color:#000!important;width:42px;height:42px;border-radius:50%}
+.mbtn-play:hover{background:var(--a2)!important}
+.mbar-prog{width:100%;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--t2)}
+.mbar-prog-track{flex:1;height:4px;background:#333;border-radius:2px;cursor:pointer;position:relative}
+.mbar-prog-fill{height:100%;background:var(--a);border-radius:2px;pointer-events:none}
+.mbar-prog-track:hover .mbar-prog-fill{background:#fff}
+.mbar-prog-thumb{position:absolute;top:50%;transform:translateY(-50%);width:10px;height:10px;background:var(--a);border-radius:50%;opacity:0;pointer-events:none;transition:opacity .15s;margin-left:-5px}
+.mbar-prog-track:hover .mbar-prog-thumb{opacity:1}
+.mbar-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.mvol{width:80px;height:4px;background:#333;border-radius:2px;cursor:pointer;position:relative}
+.mvol-fill{height:100%;background:var(--a);border-radius:2px;pointer-events:none}
+
+/* Кнопка лайка на карточке трека */
+.mc-like-btn{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.55);border:none;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;cursor:pointer;opacity:0;transition:opacity .15s,color .15s,background .15s;z-index:2}
+.mc:hover .mc-like-btn{opacity:1}
+.mc-like-btn.liked{opacity:1;color:#ff4d6d;background:rgba(255,77,109,.3)}
+.mc-like-btn.disliked{opacity:1;color:#4d9fff;background:rgba(77,159,255,.3)}
+
+/* Очередь */
+.track-panel{display:none;position:fixed;right:0;top:var(--hdr-h);bottom:0;width:300px;background:#161616;border-left:1px solid var(--b);flex-direction:column;z-index:85;transition:transform .3s ease}
+.track-panel.show{display:flex;transform:translateX(0)}
+.track-panel.show.collapsed{transform:translateX(300px)}
+.track-panel-tab{position:absolute;left:-28px;top:50%;transform:translateY(-50%);width:28px;height:60px;background:#161616;border:1px solid var(--b);border-right:none;border-radius:8px 0 0 8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--t2);font-size:14px;writing-mode:vertical-rl;letter-spacing:2px;transition:color .15s,background .15s;user-select:none}
+.track-panel-tab:hover{background:#222;color:#fff}
+.track-panel-inner{flex:1;overflow-y:auto;padding:12px}
+.track-panel-cover{width:calc(100% - 0px);aspect-ratio:1;object-fit:cover;object-position:center;border-radius:10px;background:#1e1e1e;display:block;margin:0 auto 10px}
+.track-panel-cover-ph{width:100%;aspect-ratio:1;background:#1e1e1e;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:60px;margin:0 auto 10px}
+.tp-title{font-size:15px;font-weight:700;color:var(--a);text-align:center;margin-bottom:2px}
+.tp-artist{font-size:12px;color:var(--t2);text-align:center;margin-bottom:12px}
+.tp-track{padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px;transition:background .12s;display:flex;align-items:center;gap:8px;position:relative}
+.tp-track:hover{background:#272727}
+.tp-track.playing{background:#1a2e1a;color:var(--a)}
+/* Состояние лайка для трека в очереди */
+.tp-track.liked{color:#ff4d6d}
+.tp-track-num{color:var(--t2);font-size:11px;min-width:20px}
+.music-page.on{padding-bottom:0}
+.music-page.player-open .music-lib{padding-bottom:calc(var(--mbar-h) + 20px)}
+
+/* ── ARTIST PAGE ── */
+.artist-page{display:none;flex-direction:column;width:100%}
+.artist-page.on{display:flex}
+.artist-banner-wrap{width:100%;display:flex;justify-content:center;flex-shrink:0}
+.artist-banner{width:100%;max-width:1707px;background:linear-gradient(135deg,#1a2a1a,#0d0d1a);position:relative;overflow:hidden;min-height:120px}
+.artist-banner img{width:100%;height:auto;object-fit:cover;object-position:center top;display:block}
+.artist-banner-overlay{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.05) 0%,rgba(0,0,0,.65) 100%)}
+/* Герой — поверх баннера, прибит к низу */
+.artist-hero{position:absolute;bottom:0;left:0;right:0;display:flex;align-items:flex-end;gap:16px;padding:16px 24px;z-index:2}
+.artist-hero-avatar{width:90px;height:90px;border-radius:50%;overflow:hidden;background:#1e1e1e;border:3px solid rgba(255,255,255,.15);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:700;color:var(--a)}
+.artist-hero-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.artist-hero-info{padding-bottom:4px}
+.artist-hero-name{font-size:26px;font-weight:800;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.9)}
+.artist-hero-stats{font-size:12px;color:rgba(255,255,255,.65);margin-top:3px;text-shadow:0 1px 4px rgba(0,0,0,.8)}
+.artist-section-title{font-size:16px;font-weight:700;padding:20px 24px 14px;color:#fff}
+.artist-albums-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:16px;padding:0 24px 24px}
+
+/* ══ DOWNLOADER PAGE (локальный) ══ */
+.dl-page{display:none;margin-left:var(--side-w);margin-top:var(--hdr-h);padding:20px 24px}
+.dl-page.on{display:block}
+.dl-header{font-size:22px;font-weight:700;margin-bottom:6px}
+.dl-sub{color:var(--t2);font-size:14px;margin-bottom:24px}
+.dl-card{background:var(--s);border-radius:var(--r);padding:24px;margin-bottom:16px;border:1px solid var(--b)}
+.dl-card h3{font-size:15px;font-weight:600;margin-bottom:14px;color:var(--a)}
+.dl-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.dl-input{flex:1;min-width:200px;background:var(--c);border:1px solid var(--b);border-radius:8px;color:#fff;padding:10px 14px;font-size:14px;outline:0;transition:border .2s}
+.dl-input:focus{border-color:var(--a)}
+.dl-btn{background:var(--a);color:#000;border:none;padding:10px 20px;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;white-space:nowrap;transition:background .2s}
+.dl-btn:hover{background:var(--a2)}
+.dl-select{background:var(--c);border:1px solid var(--b);border-radius:8px;color:#fff;padding:10px 12px;font-size:14px;outline:0;cursor:pointer}
+.dl-select:focus{border-color:var(--a)}
+.dl-cmd{background:#0a0a0a;border:1px solid var(--b);border-radius:8px;padding:14px;font-family:monospace;font-size:12px;color:#00ff85;white-space:pre-wrap;word-break:break-all;margin-top:12px;display:none;position:relative}
+.dl-cmd.show{display:block}
+.dl-cmd pre{color:#00ff85;font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-all;margin:0}
+
+/* ── НОВАЯ СКАЧИВАЛКА В ХЕДЕРЕ ── */
+.dl-inline{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  background:#111;
+  border:1px solid #2a2a2a;
+  border-radius:0 0 10px 10px;
+  padding:5px 10px;
+  position:absolute;
+  top:var(--hdr-h);
+  left:50%;
+  transform:translateX(-50%) scaleY(0);
+  transform-origin:top center;
+  opacity:0;
+  pointer-events:none;
+  z-index:99;
+  box-shadow:0 8px 24px rgba(0,0,0,.7);
+  transition:transform .22s cubic-bezier(0,0,.4,1),opacity .22s cubic-bezier(0,0,.4,1);
+}
+.dl-inline.open{
+  transform:translateX(-50%) scaleY(1);
+  opacity:1;
+  pointer-events:auto;
+}
+.dl-inline input[type=text]{
+  background:#1e1e1e;
+  border:1px solid #333;
+  border-radius:6px;
+  color:#fff;
+  padding:0 10px;
+  font-size:12px;
+  width:210px;
+  height:28px;
+  outline:0;
+}
+.dl-inline input[type=text]:focus{border-color:rgba(0,255,133,.4)}
+.dl-inline select{
+  background:#1e1e1e;
+  border:1px solid #333;
+  border-radius:6px;
+  color:#ccc;
+  padding:0 5px;
+  font-size:12px;
+  outline:0;
+  height:28px;
+  cursor:pointer;
+}
+.dl-inline button{
+  background:var(--a);
+  color:#000;
+  border:none;
+  border-radius:6px;
+  padding:0 12px;
+  font-weight:700;
+  font-size:11px;
+  letter-spacing:.4px;
+  cursor:pointer;
+  white-space:nowrap;
+  transition:background .15s;
+  height:28px;
+}
+.dl-inline button:hover{background:var(--a2)}
+
+.dl-progress{
+  display:none;
+  margin-left:12px;
+  align-items:center;
+  gap:8px;
+  font-size:13px;
+  color:var(--a);
+}
+.dl-progress-bar{
+  width:120px;
+  height:4px;
+  background:#333;
+  border-radius:9999px;
+  overflow:hidden;
+}
+.dl-progress-fill{
+  height:100%;
+  background:var(--a);
+  width:0%;
+  transition:width .3s;
+}
+
+@media(max-width:1024px){
+  .side{width:72px}.si-label,.st{display:none}.si{justify-content:center;padding:12px 8px}
+  .main,.vp{margin-left:72px}.vp.on{flex-direction:column}.rec{max-width:100%}
+  .mbar{left:72px}.track-panel{width:240px}.track-panel.show.collapsed{transform:translateX(240px)}
+  .music-page{margin-left:72px}.dl-page{margin-left:72px}
+  .dl-inline input{width:160px}
+}
+@media(max-width:640px){
+  .side{display:none}.main,.vp{margin-left:0}.vc{width:100%!important}.vc.vert{width:50%!important}
+  .mbar{left:0}.mbar-meta{display:none}.mc{width:calc(50% - 8px)}.artist-card{width:130px}
+  .track-panel{width:200px}.track-panel.show.collapsed{transform:translateX(200px)}
+  .music-page{margin-left:0}.dl-page{margin-left:0}
+  .dl-inline input{width:120px}.dl-inline select{font-size:11px;padding:0 6px}.dl-inline button{font-size:11px;padding:0 12px}
+}
+
+/* ── SERVER LIBRARY (стриминг с сервера) ── */
+.snav{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:10px;cursor:pointer;color:var(--t2);font-size:14px;transition:.15s;overflow:hidden;width:100%}
+.snav:hover,.snav.on{background:#272727;color:#fff}
+.snav.on{font-weight:500}
+/* страница slib удалена, стили для неё не нужны */
+
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="logo" id="logoBtn"><div class="logo-ico"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div><span>Owntube</span></div>
+  <div class="srch">
+    <input type="text" id="searchIn" placeholder="Поиск видео...">
+    <button class="srch-btn" id="searchBtn">⌕</button>
+  </div>
+  <button id="dlToggleBtn" title="Download" style="margin-left:auto;flex-shrink:0;width:30px;height:30px;border-radius:50%;background:rgba(0,255,133,.1);border:1px solid rgba(0,255,133,.25);color:#00ff85;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+  <div class="dl-inline" id="dlInline">
+    <input type="text" id="dlUrlInline" placeholder="Вставь YouTube ссылку">
+    <select id="dlTypeInline">
+      <option value="video">Видео</option>
+      <option value="audio">Аудио</option>
+    </select>
+    <select id="dlQualityInline"></select>
+    <label style="color:#aaa;font-size:12px;display:flex;align-items:center;gap:4px;white-space:nowrap;">
+      <input type="checkbox" id="dlNumberingInline" checked> №
+    </label>
+    <label style="color:#aaa;font-size:12px;display:flex;align-items:center;gap:4px;white-space:nowrap;" title="Если ссылка ведёт на видео внутри плейлиста — скачать только его, а не весь плейлист">
+      <input type="checkbox" id="dlNoPlaylistInline"> только это видео
+    </label>
+    <select id="dlThumbModeInline" title="Обложки" style="font-size:12px;">
+      <option value="2" selected>Обложка: каждому треку</option>
+      <option value="1">Обложка: одна на альбом</option>
+      <option value="3">Обложка: не трогать</option>
+    </select>
+    <button id="dlBtnInline"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>КАЧАТЬ</button>
+    <div class="dl-progress" id="dlProgressInline">
+      <div class="dl-progress-bar"><div class="dl-progress-fill" id="dlProgFill"></div></div>
+      <span id="dlProgText">0%</span>
+    </div>
+  </div>
+</div>
+
+<nav class="side">
+  <div class="si on" data-p="home"><div class="si-ico si-ico-svg" style="background:#1a2a1a;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00ff85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div><span class="si-label">Главная</span></div>
+  <div class="si" data-p="vertical"><div class="si-ico si-ico-svg" style="background:#2a1a0a;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ff6b35" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12" y2="18"/></svg></div><span class="si-label">Вертикальные</span></div>
+  <div class="si" data-p="music"><div class="si-ico si-ico-svg" style="background:#0a1a2a;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b9eff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div><span class="si-label">Музыка</span></div>
+  <div class="si" data-p="downloader"><div class="si-ico si-ico-svg" style="background:#1a0a2a;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b47fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div><span class="si-label">Скачать</span></div>
+  <!-- НОВАЯ КНОПКА СЕРВЕРА -->
+  <div class="snav" id="serverStatusBtn">
+    <div class="si-ico si-ico-svg" style="background:#0a2a1a;display:flex;align-items:center;justify-content:center">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00ff85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="3" width="20" height="14" rx="2"/>
+        <line x1="8" y1="21" x2="16" y2="21"/>
+        <line x1="12" y1="17" x2="12" y2="21"/>
+      </svg>
+    </div>
+    <span class="si-label" id="serverLabel">Сервер • <span id="serverPing" style="color:#0f0">●</span></span>
+  </div>
+  <div class="sd"></div>
+  <div class="st">Библиотека</div>
+  <div class="si" data-p="history"><div class="si-ico si-ico-svg" style="background:#0a0a2a;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7b7bff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div><span class="si-label">История</span></div>
+  <div style="flex:1"></div>
+  <div class="sd"></div>
+  <div class="si" id="settingsBtn"><div class="si-ico" style="background:#2a2a2a;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div><span class="si-label">Настройки</span></div>
+</nav>
+
+<main class="main" id="mainC">
+  <div class="tabs" id="tabs">
+    <div class="tab on" data-f="all">Все</div>
+    <div class="tab" data-f="vert">Вертикальные</div>
+    <div class="tab" data-f="horiz">Горизонтальные</div>
+  </div>
+  <div class="pgb" id="pgb"></div>
+  <div class="vg" id="vg"></div>
+</main>
+
+<div class="vp" id="vp">
+  <div class="ps">
+    <div class="pb">
+      <video id="player" preload="auto" playsinline></video>
+      <div class="pc" id="playerControls">
+        <div class="pc-progress" id="pcProgress">
+          <div class="pc-progress-buf" id="pcBuf"></div>
+          <div class="pc-progress-played" id="pcPlayed"></div>
+          <div class="pc-progress-dot" id="pcDot"></div>
+        </div>
+        <div class="pc-row">
+          <button class="pc-btn" id="pcPlay" title="Пауза/Play (Space)">
+            <svg class="ic-play" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="ic-pause" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+          </button>
+          <button class="pc-btn" id="pcVol" title="Звук">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4h4l5 5V5L7 10H3z"/></svg>
+          </button>
+          <input type="range" id="pcVolSlider" min="0" max="1" step="0.01" value="1" class="pc-vol-slider">
+          <span class="pc-time" id="pcTime">0:00 / 0:00</span>
+          <div class="pc-spacer"></div>
+          <button class="pc-btn" id="pcPip" title="Картинка в картинке">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19 7H5c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2zm-9 9H5v-4h5v4z"/></svg>
+          </button>
+          <button class="pc-btn" id="pcFs" title="На весь экран">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zM5 10h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="end-screen" id="endScreen">
+        <div class="end-title">Смотреть дальше</div>
+        <div class="end-grid" id="endGrid"></div>
+      </div>
+    </div>
+    <div class="vi">
+      <h1 id="vpTitle"></h1>
+      <div class="mr"><span id="vpDate"></span><span id="vpDur"></span><span id="vpSize"></span></div>
+      <div class="var">
+      </div>
+    </div>
+    <div style="margin-top:28px">
+      <h3>Комментарии</h3>
+      <div style="display:flex;gap:8px;margin:12px 0 20px">
+        <input type="text" id="cmtIn" placeholder="Напишите комментарий..." style="flex:1;padding:10px 14px;background:var(--s);border:1px solid var(--b);border-radius:8px;color:#fff;font-size:14px;outline:0">
+        <button id="cmtBtn" style="background:var(--a);color:#000;border:none;padding:10px 20px;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer">Отправить</button>
+      </div>
+      <div id="cmtList"></div>
+    </div>
+  </div>
+  <div class="rec"><h3>Рекомендации</h3><div id="recList"></div></div>
+</div>
+
+<!-- ══════════════ DOWNLOADER PAGE (локальный) ══════════════ -->
+<div class="dl-page" id="dlPage">
+  <div class="dl-header"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>ZEX Downloader (локальный)</div>
+  <div class="dl-sub">Скачивание видео и музыки через yt-dlp</div>
+
+  <div class="dl-card">
+    <h3>🎬 Скачать</h3>
+    <div class="dl-row">
+      <input class="dl-input" id="dlUrl" placeholder="https://youtube.com/watch?v=... или плейлист">
+      <select class="dl-select" id="dlType">
+        <option value="video">Видео</option>
+        <option value="music">Музыка (MP3)</option>
+      </select>
+      <select class="dl-select" id="dlQuality">
+        <option value="best">Лучшее</option>
+        <option value="1080">1080p</option>
+        <option value="720">720p</option>
+        <option value="480">480p</option>
+      </select>
+    </div>
+    <button class="dl-btn" onclick="startDownload()">ЗАПУСТИТЬ СКАЧИВАНИЕ</button>
+  </div>
+
+  <div class="dl-cmd" id="resultBlock" style="display:none">
+    <pre id="downloadLog" style="max-height:400px;overflow:auto"></pre>
+  </div>
+</div>
+<!-- ══════════════ END DOWNLOADER ══════════════ -->
+
+<!-- БЛОК СЕРВЕРНОЙ БИБЛИОТЕКИ ПОЛНОСТЬЮ УДАЛЁН -->
+
+<!-- SETTINGS MODAL -->
+<div class="mo" id="setMo">
+  <div class="ml">
+    <h2>Настройки</h2>
+    <p style="color:var(--t2);margin-bottom:16px">Управление библиотекой</p>
+    <div class="toggle-row">
+      <label for="toggleDynCover" style="cursor:pointer">
+        Динамическая обложка в сайдбаре
+        <small>Обложка правой панели меняется под текущий трек</small>
+      </label>
+      <div class="toggle-sw"><input type="checkbox" id="toggleDynCover"><span class="slider"></span></div>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;margin-bottom:16px">
+      <button id="exportBtn" style="background:var(--a);color:#000;border:none;padding:10px 20px;border-radius:8px;font-weight:600;cursor:pointer">Экспорт JSON</button>
+      <button id="importBtn" style="background:var(--a);color:#000;border:none;padding:10px 20px;border-radius:8px;font-weight:600;cursor:pointer">Импорт JSON</button>
+      <button id="regenerateThumbsBtn" style="background:var(--a);color:#000;border:none;padding:10px 20px;border-radius:8px;font-weight:600;cursor:pointer">Перегенерация превью</button>
+      <button id="clearBtn" style="background:var(--c);color:var(--t);border:none;padding:10px 20px;border-radius:8px;font-weight:600;cursor:pointer">Очистить всё</button>
+    </div>
+    <h3 style="font-size:14px;color:var(--a)">JSON библиотеки</h3>
+    <div class="json-preview" id="jsonPreview">{}</div>
+    <div style="margin-top:24px;text-align:right">
+      <button id="closeModal" style="background:var(--a);color:#000;border:none;padding:10px 20px;border-radius:8px;font-weight:600;cursor:pointer">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="jsonInput" accept=".json" hidden>
+
+<!-- MUSIC PAGE -->
+<div class="music-page" id="musicPage">
+  <div class="music-top">
+    <div class="music-lib">
+      <div class="music-lib-header">
+        <h2 id="musicPageTitle">Музыка</h2>
+        <button class="music-connect-btn" id="musicRandomMixBtn" title="Собрать и включить случайную подборку из всей библиотеки" style="margin-right:8px;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="16" cy="8" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="8" cy="16" r="1.2" fill="currentColor"/><circle cx="16" cy="16" r="1.2" fill="currentColor"/></svg>Случайная подборка</button>
+      </div>
+      <div class="music-nav" id="musicNav"></div>
+      <div class="music-grid" id="musicGrid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- RIGHT TRACK PANEL -->
+<div class="track-panel" id="trackPanel">
+  <div class="track-panel-tab" id="trackPanelTab"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></div>
+  <div class="track-panel-inner" id="trackPanelInner"></div>
+</div>
+
+<!-- MUSIC PLAYER BAR -->
+<div class="mbar" id="mbar">
+  <div class="mbar-art" id="mbarArt"><div class="mbar-art-ph"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div></div>
+  <div class="mbar-meta">
+    <div class="mbar-title" id="mbarTitle">Ничего не играет</div>
+    <div class="mbar-artist" id="mbarArtist">—</div>
+  </div>
+  <div class="mbar-center">
+    <div class="mbar-btns">
+      <button class="mbtn" id="mShuf" title="Перемешать"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h4l6 12h4M3 18h4l2.5-5M17 6h4M17 6l3-3M17 6l3 3M17 18l3 3M17 18l3-3"/></svg></button>
+      <button class="mbtn" id="mPrev" title="Предыдущая"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+      <button class="mbtn mbtn-play" id="mPlay" title="Воспроизвести"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+      <button class="mbtn" id="mNext" title="Следующая"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M16 6h2v12h-2zM6 6l8.5 6L6 18z"/></svg></button>
+      <button class="mbtn" id="mLoop" title="Повтор"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></button>
+      <!-- Только дизлайк -->
+      <button class="mbtn" id="mDislike" title="Не нравится"></button>
+    </div>
+    <div class="mbar-prog">
+      <span id="mCurTime">0:00</span>
+      <div class="mbar-prog-track" id="mProgTrack">
+        <div class="mbar-prog-fill" id="mProgFill" style="width:0%"></div>
+        <div class="mbar-prog-thumb" id="mProgThumb"></div>
+      </div>
+      <span id="mDurTime">0:00</span>
+    </div>
+  </div>
+  <div class="mbar-right">
+    <canvas id="eqCanvas" width="130" height="32" style="opacity:.9;display:block;border-radius:4px;background:rgba(0,0,0,.15);flex-shrink:0"></canvas>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#aaa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+    <div class="mvol" id="mVolTrack"><div class="mvol-fill" id="mVolFill" style="width:80%"></div></div>
+  </div>
+</div>
+<div class="mbar-tab" id="mbarTab" title="Открыть/закрыть плеер">♪</div>
+
+<script type="module" src="js/app.js"></script>
+
+<script>
+// ══════════ СКРИПТ ДЛЯ НОВОЙ СКАЧИВАЛКИ В ХЕДЕРЕ ══════════
+
+// === ПУТИ ПО УМОЛЧАНИЮ === (соответствуют LIBRARY_MUSIC_DIR / LIBRARY_VIDEO_DIR)
+const DEFAULT_PATHS = {
+  music: "F:\\biz.negr-off.twc\\clornet 1",
+  video: "F:\\new DlB\\кибитка"
+};
+
+const DOWNLOAD_API = `${location.protocol}//${location.hostname}:3001`;
+
+function updateQualityOptions() {
+  const typeSel = document.getElementById('dlTypeInline');
+  const qualSel = document.getElementById('dlQualityInline');
+  qualSel.innerHTML = '';
+
+  if (typeSel.value === 'audio') {
+    qualSel.innerHTML = `
+      <option value="320">320 kbps</option>
+      <option value="256">256 kbps</option>
+      <option value="192" selected>192 kbps</option>
+      <option value="128">128 kbps</option>
+    `;
+  } else {
+    qualSel.innerHTML = `
+      <option value="best">Лучшее</option>
+      <option value="1080">1080p</option>
+      <option value="720" selected>720p</option>
+      <option value="480">480p</option>
+      <option value="360">360p</option>
+    `;
+  }
+}
+
+document.getElementById('dlTypeInline').addEventListener('change', updateQualityOptions);
+updateQualityOptions();
+
+async function startDownloadInline() {
+  const url = document.getElementById('dlUrlInline').value.trim();
+  if (!url) { 
+    alert('Кинь ссылку, мудила'); 
+    return; 
+  }
+
+  let type = document.getElementById('dlTypeInline').value;
+  if (type === 'audio') type = 'music';
+
+  const quality = document.getElementById('dlQualityInline').value;
+  const numbering = document.getElementById('dlNumberingInline').checked;
+  const noPlaylist = document.getElementById('dlNoPlaylistInline').checked;
+  const thumbModeEl = document.getElementById('dlThumbModeInline');
+  const thumbMode = thumbModeEl ? thumbModeEl.value : 2;
+
+  const prog = document.getElementById('dlProgressInline');
+  const fill = document.getElementById('dlProgFill');
+  const text = document.getElementById('dlProgText');
+
+  prog.style.display = 'flex';
+  fill.style.width = '10%';
+  text.textContent = 'Запуск yt-dlp...';
+
+  try {
+    const res = await fetch(`${DOWNLOAD_API}/download`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        url, 
+        type, 
+        quality, 
+        numbering,
+        noPlaylist,
+        thumbMode,
+        embedThumb: true, 
+        browser: 'firefox',
+        outputDir: DEFAULT_PATHS[type] || DEFAULT_PATHS.music   // защита
+      })
+    });
+    
+    const data = await res.json();
+    
+    if (data.success) {
+      fill.style.width = '100%';
+      text.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><path d="M20 6 9 17l-5-5"/></svg> ${type.toUpperCase()} (${numbering ? 'с №' : 'без'}${noPlaylist ? ', только 1 видео' : ''})`;
+      console.log(`%c[ЗАКАЧАНО → ${DEFAULT_PATHS[type] || 'default'}]`, 'color:#00ff85; font-weight:bold');
+    } else {
+      text.textContent = '❌ Ошибка';
+      alert('Ошибка скачивания: ' + (data.error || data.logs?.join('\n') || 'неизвестно'));
+    }
+  } catch(e) {
+    text.textContent = '❌ Нет соединения';
+    alert('Сервер не отвечает. Запусти server.js заново');
+  } finally {
+    setTimeout(() => {
+      prog.style.display = 'none';
+      document.getElementById('dlUrlInline').value = '';
+    }, 2800);
+  }
+}
+
+document.getElementById('dlBtnInline').addEventListener('click', startDownloadInline);
+// Toggle
+const _dlp = document.getElementById('dlInline');
+const _dlb = document.getElementById('dlToggleBtn');
+function _dlOpen(){
+  _dlp.style.transition='transform .22s cubic-bezier(0,0,.4,1),opacity .22s cubic-bezier(0,0,.4,1)';
+  _dlp.classList.add('open');
+  setTimeout(()=>document.getElementById('dlUrlInline').focus(),40);
+}
+function _dlClose(){
+  _dlp.style.transition='transform .18s cubic-bezier(.6,0,1,1),opacity .18s cubic-bezier(.6,0,1,1)';
+  _dlp.classList.remove('open');
+}
+_dlb.addEventListener('click',e=>{e.stopPropagation();_dlp.classList.contains('open')?_dlClose():_dlOpen();});
+document.addEventListener('click',e=>{if(_dlp.classList.contains('open')&&!_dlp.contains(e.target)&&e.target!==_dlb)_dlClose();});
+document.getElementById('dlUrlInline').addEventListener('keypress', e => {
+  if (e.key === 'Enter') startDownloadInline();
+});
+
+</script>
+
+</body>
+</html>
