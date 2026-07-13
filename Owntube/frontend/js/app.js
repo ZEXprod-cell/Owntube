@@ -46,7 +46,6 @@ const ICONS = {
   menu:     '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>',
   dice:     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="16" cy="8" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="8" cy="16" r="1.2" fill="currentColor"/><circle cx="16" cy="16" r="1.2" fill="currentColor"/></svg>',
   check:    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
-  // НОВЫЕ ИКОНКИ ДЛЯ ЛАЙКОВ
   like:     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>',
   likeFilled:'<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>',
   dislike:  '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg>',
@@ -57,12 +56,13 @@ function setIcon(el, name){
   const label = el.getAttribute('data-label');
   el.innerHTML = ICONS[name] + (label ? ` <span>${label}</span>` : '');
 }
-const DB_NAME='owntube_v28';
+const DB_NAME='owntube_v29';
 let db,curPage='home',curVidId=null,curTab='all',thumbObs=null,rendering=false;
 let videoPage=0;const VIDEO_PAGE_SIZE=60;
 const curVid={id:null,url:null,type:null};
 let dirHandle=null;
 let dynCover=localStorage.getItem('ot_dyn_cover')==='1';
+let animCoversEnabled=localStorage.getItem('ot_anim_covers')==='1';
 let mbarVisible=false;
 let tpVisible = false;
  
@@ -98,7 +98,7 @@ async function checkServerStatus() {
     if (wasOffline && serverOnline) {
       videoLibCache = null; videoLibCacheAt = 0;
       musicLibCache = null; musicLibCacheAt = 0;
-      renderPage();
+      refreshCurrentView();
     }
     wasOffline = !serverOnline;
     updatePingUI();
@@ -144,7 +144,7 @@ function loadLibFromLS(key) {
 // ──────────────────────────────────────────────
 function openDB(){
   return new Promise((ok,fail)=>{
-    ['owntube_db','owntube_v5','owntube_v7','owntube_v8','owntube_v10','owntube_v12','owntube_v15'].forEach(n=>{try{indexedDB.deleteDatabase(n);}catch(e){}});
+    ['owntube_db','owntube_v5','owntube_v7','owntube_v8','owntube_v10','owntube_v12','owntube_v15','owntube_v28'].forEach(n=>{try{indexedDB.deleteDatabase(n);}catch(e){}});
     const req=indexedDB.open(DB_NAME,1);
     req.onupgradeneeded=e=>{
       const d=e.target.result;
@@ -225,7 +225,90 @@ async function regenMissing(){
 }
  
  
-// ──────────────────────────────────────────────
+// ── АНИМИРОВАННЫЕ ОБЛОЖКИ (всё через сервер) ──
+function getAnimSrc(item){
+  if(!animCoversEnabled||!item) return null;
+  if(!item.animCoverUrl) return null;
+  const url=item.animCoverUrl.startsWith('/')?SERVER_API+item.animCoverUrl:item.animCoverUrl;
+  const mime=item.animCoverType||'image/gif';
+  return {url,mime};
+}
+
+function animCoverHtml(url,mime,autoplay=true){
+  if(!url) return '';
+  const isVideo = mime && (mime.startsWith('video/') || mime === 'video/webm');
+  const style = 'width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit;';
+  const busted = url + (url.includes('?') ? '&' : '?') + '_acv=' + animCoversCacheAt;
+  if(isVideo) return `<video class="anim-cover" src="${busted}" ${autoplay?'autoplay ':''}loop muted playsinline style="${style}"></video>`;
+  return `<img class="anim-cover" src="${busted}" style="${style}" alt="">`;
+}
+
+function applyAnimCover(container,item,selector){
+  const ac=getAnimSrc(item);
+  if(!ac) return;
+  const el=container.querySelector(selector);
+  if(el) el.outerHTML=animCoverHtml(ac.url,ac.mime);
+}
+
+// Управление модалкой — только просмотр с сервера
+async function openAnimCoversModal(){
+  document.getElementById('animCoversMo').classList.add('on');
+  await renderAcmList();
+}
+
+function closeAnimCoversModal(){
+  document.getElementById('animCoversMo').classList.remove('on');
+}
+
+async function renderAcmList(query=''){
+  const list=document.getElementById('acmList');
+  let items=[];
+  try{
+    const res=await fetchWithTimeout(`${SERVER_API}/library/anim-covers`,{},8000);
+    const data=await res.json();
+    items=data.items||[];
+  }catch(e){
+    list.innerHTML='<div class="acm-empty">Сервер недоступен</div>';
+    return;
+  }
+  if(query){
+    const q=query.toLowerCase();
+    items=items.filter(i=>
+      i.name.toLowerCase().includes(q)||
+      (i.filename||'').toLowerCase().includes(q)||
+      (i.matchedAlbums||[]).join(' ').toLowerCase().includes(q)||
+      (i.matchedArtists||[]).join(' ').toLowerCase().includes(q)
+    );
+  }
+  if(!items.length){
+    list.innerHTML='<div class="acm-empty">Нет аним. обложек на сервере</div>';
+    return;
+  }
+  list.innerHTML=items.map(it=>{
+    const src=it.streamUrl.startsWith('/')?SERVER_API+it.streamUrl:it.streamUrl;
+    const thumb=it.type==='video/webm'
+      ?`<video class="anim-cover" src="${src}" muted style="width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit;"></video>`
+      :`<img class="anim-cover" src="${src}" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit;" alt="">`;
+    let matchHtml='';
+    if(it.matchedTrackCount>0){
+      const artists=(it.matchedArtists||[]).slice(0,2).join(', ');
+      const albums=(it.matchedAlbums||[]).slice(0,2).join(', ');
+      const typeLabels=(it.matchTypes||[]).map(t=>t==='album'?'альбом':t==='title'?'трек':'файл').join(', ');
+      matchHtml=`<div style="font-size:11px;color:var(--a);margin-top:3px">✅ ${typeLabels}${artists?' — '+artists:''}${albums?' — '+albums:''} (${it.matchedTrackCount} тр.)</div>`;
+    }else{
+      matchHtml='<div style="font-size:11px;color:#e94560;margin-top:3px">⚠ нет совпадений</div>';
+    }
+    return `<div class="acm-item">
+      <div class="acm-item-thumb">${thumb}</div>
+      <div class="acm-item-info">
+        <div class="acm-item-name">${it.name}<span class="acm-badge on">${it.type==='video/webm'?'WebM':'GIF'}</span></div>
+        <div class="acm-item-type">${it.filename}</div>
+        ${matchHtml}
+      </div>
+    </div>`;
+  }).join('');
+}
+
 // БЛОК 2: Работа с папками (видео), сканирование, импорт/экспорт
 // ──────────────────────────────────────────────
 async function scanFolder(handle){
@@ -329,7 +412,7 @@ async function fetchVideoLibrary() {
 }
 
 async function renderPage(){
-  if(curPage==='music'){showMusicPage();return;}
+  if(curPage==='music'){refreshCurrentView();return;}
   if(curPage==='downloader'){showDlPage();return;}
   if(rendering)return;rendering=true;
   try{
@@ -353,6 +436,7 @@ async function renderPage(){
           it.name = it.name || it.fullName || 'Серверное видео';
           it.dateAdded = it.mtime || Date.now();
           serverVideoMap.set(id, it);
+          if (raw.animCoverUrl) { it.animCoverUrl = SERVER_API + raw.animCoverUrl; it.animCoverType = raw.animCoverType; }
           list.unshift(it);
         });
       } catch(e){ console.warn('Server video failed', e); }
@@ -387,7 +471,7 @@ async function renderPage(){
       const thumb=TC.get(v.id)||v.thumbnail||defThumb(v.name);
       const badge=v.isServer ? `<div class="ct-badge ok">● сервер</div>` : (VS.has(v.id)?`<div class="ct-badge ok">● подключено</div>`:'');
       const ri=hist.includes(v.id)?`<div class="replay-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.67"/></svg></div>`:'';
-      card.innerHTML=`<div class="ct${v.vertical?' vert':''}"><img src="${thumb}" alt="${v.name}" loading="lazy" id="thumb-${v.id}"><div class="cd">${fmtD(v.duration)}</div>${badge}${ri}</div><div class="ci"><div class="cit">${v.name}</div><div class="cm">${fmtSz(v.size)} • ${fmtDt(v.dateAdded)}</div></div>`;
+      card.innerHTML=`<div class="ct${v.vertical?' vert':''}">${animCoversEnabled&&v.animCoverUrl?animCoverHtml(v.animCoverUrl.startsWith('/')?SERVER_API+v.animCoverUrl:v.animCoverUrl,v.animCoverType):`<img src="${thumb}" alt="${v.name}" loading="lazy" id="thumb-${v.id}">`}<div class="cd">${fmtD(v.duration)}</div>${badge}${ri}</div><div class="ci"><div class="cit">${v.name}</div><div class="cm">${fmtSz(v.size)} • ${fmtDt(v.dateAdded)}</div></div>`;
       const ric=card.querySelector('.replay-icon');if(ric)ric.addEventListener('click',e=>{e.stopPropagation();openVid(v.id);});
       g.appendChild(card);if(thumbObs)thumbObs.observe(card);
     }
@@ -678,6 +762,21 @@ function initPlayerControls(){
   showControls();
 }
 
+// Универсальное обновление текущего представления (без сброса навигации)
+async function refreshCurrentView(){
+  if(curPage==='music'){
+    if(MS.mode==='artist_page'&&MS.artist){
+      const all=await buildAllTracks();renderArtistPage(MS.artist,all);
+    }else{
+      renderMusicPage(MS.mode,MS.artist,MS.album);
+    }
+  }else if(curPage==='downloader'){
+    // ничего
+  }else{
+    renderPage();
+  }
+}
+
 function initEvents(){
   document.getElementById('exportBtn').onclick=exportJson;
   document.getElementById('importBtn').onclick=()=>document.getElementById('jsonInput').click();
@@ -686,6 +785,7 @@ function initEvents(){
  
   document.getElementById('settingsBtn').onclick=()=>{
     document.getElementById('toggleDynCover').checked=dynCover;
+    document.getElementById('toggleAnimCovers').checked=animCoversEnabled;
     buildJson().then(d=>{document.getElementById('jsonPreview').textContent=JSON.stringify(d,null,2);});
     document.getElementById('setMo').classList.add('on');
   };
@@ -744,7 +844,19 @@ function initEvents(){
  
   document.getElementById('setMo').addEventListener('click',e=>{if(e.target===e.currentTarget)e.target.classList.remove('on');});
   document.getElementById('closeModal').onclick=()=>document.getElementById('setMo').classList.remove('on');
-  document.getElementById('toggleDynCover').addEventListener('change',e=>{dynCover=e.target.checked;localStorage.setItem('ot_dyn_cover',dynCover?'1':'0');});
+  document.getElementById('toggleDynCover').addEventListener('change',e=>{
+    dynCover=e.target.checked;localStorage.setItem('ot_dyn_cover',dynCover?'1':'0');
+    if(curPage==='music'&&MP.trackId){resolveTrackObj(MP.trackId).then(t=>updateBar(t));}
+  });
+  document.getElementById('toggleAnimCovers').addEventListener('change',async e=>{
+    animCoversEnabled=e.target.checked;localStorage.setItem('ot_anim_covers',animCoversEnabled?'1':'0');
+    if(animCoversEnabled){animCoversCacheAt=0;await ensureAnimCoversCache();}
+    if(curPage==='music'&&MP.trackId){const t=await resolveTrackObj(MP.trackId);updateBar(t);syncAnimCovers();}
+  });
+  document.getElementById('manageAnimCoversBtn').onclick=openAnimCoversModal;
+  document.getElementById('acmClose').onclick=closeAnimCoversModal;
+  document.getElementById('animCoversMo').addEventListener('click',e=>{if(e.target===e.currentTarget)closeAnimCoversModal();});
+  document.getElementById('acmSearch').addEventListener('input',e=>{renderAcmList(e.target.value.trim());});
  
   document.getElementById('clearBtn').onclick=async()=>{
     if(!confirm('Удалить ВСЕ данные?'))return;
@@ -916,22 +1028,36 @@ function updateBar(track){
   document.getElementById('mbarArtist').textContent = track.artist || track.album || '—';
   const art = document.getElementById('mbarArt');
   const cu = getCover(track);
+
+  // В баре плеера только статическая обложка из метаданных — анимация тут не видна
   const ph = `<div class="mbar-art-ph"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>`;
   art.innerHTML = cu
     ? `<img src="${cu}" alt="" onerror="this.parentElement.innerHTML='${ph.replace(/'/g, "\\'")}'">`
     : ph;
 
+  // Динамическая обложка в панели (с анимацией)
+  // ВАЖНО: в сайдбаре только альбомная анимация, никогда трек-специфичная
   if (dynCover) {
     const panel = document.getElementById('trackPanel');
     if (panel?.classList.contains('show')) {
       const cw = document.getElementById('trackPanelInner')?.querySelector('.tp-cover-wrap');
       if (cw) {
-        cw.innerHTML = cu
-          ? `<img class="track-panel-cover" src="${cu}" alt="">`
-          : `<div class="track-panel-cover-ph"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg></div>`;
+        let panelAnim = null;
+        if (animCoversEnabled) {
+          panelAnim = matchAnimForAlbum(track.album, track.artist);
+        }
+        if (panelAnim) {
+          const acUrl2 = panelAnim.animCoverUrl.startsWith('/') ? (SERVER_API + panelAnim.animCoverUrl) : panelAnim.animCoverUrl;
+          cw.innerHTML = animCoverHtml(acUrl2, panelAnim.animCoverType, false);
+        } else if (cu) {
+          cw.innerHTML = `<img class="track-panel-cover" src="${cu}" alt="">`;
+        } else {
+          cw.innerHTML = `<div class="track-panel-cover-ph"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg></div>`;
+        }
       }
     }
   }
+  syncAnimCovers();
 }
 
 // ─── ЛАЙКИ ТРЕКОВ ────────────────────────────────────────────
@@ -975,7 +1101,29 @@ async function updateLikeButtons(track){
  if(dislikeBtn){dislikeBtn.classList.toggle('disliked',state===-1);dislikeBtn.innerHTML=state===-1?ICONS.dislikeFilled:ICONS.dislike;}
 }
 async function resolveTrackObj(id){
- return (await dbGet('tracks',id)) || serverMusicMap.get(id) || {id,isServer:true};
+  const track = (await dbGet('tracks',id)) || serverMusicMap.get(id) || {id,isServer:true};
+  // Обогащаем локальный трек anim-данными из серверного мёржа
+  if(track && !track.animCoverUrl){
+    const ad=localAnimMap.get(id);
+    if(ad){track.animCoverUrl=ad.animCoverUrl;track.animCoverType=ad.animCoverType;}
+    else{
+      const srv=serverMusicMap.get(id);
+      if(srv&&srv.animCoverUrl){track.animCoverUrl=srv.animCoverUrl;track.animCoverType=srv.animCoverType;}
+    }
+  }
+  // Клиентский матчинг — загрузка по требованию
+  if (track && !track.animCoverUrl && animCoversEnabled) {
+    if (!animCoversCache || !animCoversCache.length) await ensureAnimCoversCache();
+    if (animCoversCache && animCoversCache.length) {
+      const m = matchAnimForTrack(track);
+      if (m) {
+        track.animCoverUrl = m.animCoverUrl;
+        track.animCoverType = m.animCoverType;
+        localAnimMap.set(id, { animCoverUrl: m.animCoverUrl, animCoverType: m.animCoverType });
+      }
+    }
+  }
+  return track;
 }
 // ─── КОНЕЦ БЛОКА ЛАЙКОВ ─────────────────────────────────────
 
@@ -1024,6 +1172,21 @@ async function mPlay(id) {
   }
   if (!track) track = { id, title: 'Неизвестный трек', artist: '—', album: '', coverUrl: null };
 
+  // Обогащаем трек anim-данными из localAnimMap / serverMusicMap + клиентский матчинг
+  if(!track.animCoverUrl){
+    const ad=localAnimMap.get(id);
+    if(ad){track.animCoverUrl=ad.animCoverUrl;track.animCoverType=ad.animCoverType;}
+    else{
+      const srv=serverMusicMap.get(id);if(srv&&srv.animCoverUrl){track.animCoverUrl=srv.animCoverUrl;track.animCoverType=srv.animCoverType;}
+      else if(animCoversEnabled){
+        if(!animCoversCache||!animCoversCache.length) await ensureAnimCoversCache();
+        if(animCoversCache&&animCoversCache.length){
+        const m=matchAnimForTrack(track);
+        if(m){track.animCoverUrl=m.animCoverUrl;track.animCoverType=m.animCoverType;localAnimMap.set(id,{animCoverUrl:m.animCoverUrl,animCoverType:m.animCoverType});}}
+      }
+    }
+  }
+
   MP.audio.src = audioSrc;
   MP.audio.load();
   MP.audio.play().catch(e => console.warn('play() rejected:', e));
@@ -1033,13 +1196,30 @@ async function mPlay(id) {
   if (qIdx !== -1) MP.queueIdx = qIdx;
 
   updateBar(track);
-  updateLikeButtons(track); // ← ОБНОВЛЯЕМ КНОПКИ ЛАЙКА ПРИ СТАРТЕ
+  updateLikeButtons(track);
   setIcon(document.getElementById('mPlay'), 'pause');
   showMbar();
   hlTrack(id);
+  refreshPlayingCards(id);
+  playAnimCovers();
 }
 
-function mPause(){MP.audio.pause();setIcon(document.getElementById('mPlay'),'play');document.querySelectorAll('.mc.playing .mc-play-ov span').forEach(el=>el.innerHTML=ICONS.play);}
+function refreshPlayingCards(id){
+  document.querySelectorAll('.mc').forEach(card=>{
+    const isCurrent=card.dataset.id===id;
+    card.classList.toggle('playing',isCurrent);
+    const ov=card.querySelector('.mc-play-ov span');
+    if(ov) ov.innerHTML=ICONS[(isCurrent&&!MP.audio.paused)?'pause':'play'];
+  });
+}
+function pauseAnimCovers(){document.querySelectorAll('#mbarArt video.anim-cover, .tp-cover-wrap video.anim-cover').forEach(v=>v.pause());}
+function playAnimCovers(){document.querySelectorAll('#mbarArt video.anim-cover, .tp-cover-wrap video.anim-cover').forEach(v=>v.play().catch(()=>{}));}
+function syncAnimCovers(){
+  const sel='#mbarArt video.anim-cover, .tp-cover-wrap video.anim-cover';
+  document.querySelectorAll(sel).forEach(v=>{if(MP.audio.paused)v.pause();else v.play().catch(()=>{});});
+}
+
+function mPause(){MP.audio.pause();setIcon(document.getElementById('mPlay'),'play');pauseAnimCovers();refreshPlayingCards(MP.trackId);}
 async function mNext(){
   const q=MP.shuffle?MP.shuffled:MP.queue;if(!q.length)return;
   let idx=MP.queueIdx+1;
@@ -1054,6 +1234,8 @@ async function mPrev(){
 function openTrackPanelIfLoaded(){const panel=document.getElementById('trackPanel');if(panel.classList.contains('show')&&panel.classList.contains('collapsed')){panel.classList.remove('collapsed');tpVisible=true;}}
 function fisherYates(arr){const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 function mShuffleArr(arr){return fisherYates(arr);}
+MP.audio.addEventListener('play',()=>{playAnimCovers();refreshPlayingCards(MP.trackId);});
+MP.audio.addEventListener('pause',()=>{pauseAnimCovers();refreshPlayingCards(MP.trackId);});
 MP.audio.addEventListener('ended',()=>{if(MP.loop){MP.audio.currentTime=0;MP.audio.play().catch(()=>{});}else mNext();});
 MP.audio.addEventListener('timeupdate',()=>{
   const a=MP.audio;if(!a.duration)return;
@@ -1077,7 +1259,6 @@ function initMusicCtrl(){
   document.getElementById('mShuf').onclick=()=>{MP.shuffle=!MP.shuffle;document.getElementById('mShuf').classList.toggle('active',MP.shuffle);if(MP.shuffle)MP.shuffled=mShuffleArr(MP.queue);};
   document.getElementById('mLoop').onclick=()=>{MP.loop=!MP.loop;document.getElementById('mLoop').classList.toggle('active',MP.loop);};
  
-  // ── ОБРАБОТЧИКИ ЛАЙКОВ (с проверкой наличия элементов) ──
   const mLike = document.getElementById('mLike');
   const mDislike = document.getElementById('mDislike');
   if (mLike) {
@@ -1213,6 +1394,11 @@ async function buildAllTracks() {
           localFallbackStreamUrl.set(local.id, streamUrl);
           local.coverUrl = coverUrl || local.coverUrl;
           local.streamUrl = streamUrl;
+          if (raw.animCoverUrl) {
+            local.animCoverUrl = SERVER_API + raw.animCoverUrl;
+            local.animCoverType = raw.animCoverType;
+            localAnimMap.set(local.id, { animCoverUrl: local.animCoverUrl, animCoverType: local.animCoverType });
+          }
           if (!(local.coverData && local.coverData.byteLength)) {
             local.isServer = true;
           }
@@ -1231,6 +1417,7 @@ async function buildAllTracks() {
         it.trackNumber = it.trackNumber || null;
         it.coverUrl = coverUrl;
         it.dateAdded = it.mtime || Date.now();
+        if (raw.animCoverUrl) { it.animCoverUrl = SERVER_API + raw.animCoverUrl; it.animCoverType = raw.animCoverType; }
         serverMusicMap.set(id, it);
         MusicStore.add(id, {
           name: it.name,
@@ -1241,6 +1428,25 @@ async function buildAllTracks() {
         all.push(it);
       });
     } catch(e){ console.warn('Server music failed', e); }
+  }
+  // Клиентский матчинг анимаций для треков без animCoverUrl (загрузка по требованию)
+  if (animCoversEnabled && serverOnline) {
+    if (!animCoversCache || !animCoversCache.length) await ensureAnimCoversCache();
+    if (animCoversCache && animCoversCache.length) {
+      let matched = 0;
+      for (const t of all) {
+        if (!t.animCoverUrl) {
+          const m = matchAnimForTrack(t);
+          if (m) {
+            t.animCoverUrl = m.animCoverUrl;
+            t.animCoverType = m.animCoverType;
+            localAnimMap.set(t.id, { animCoverUrl: m.animCoverUrl, animCoverType: m.animCoverType });
+            matched++;
+          }
+        }
+      }
+      if (matched) console.log(`[anim] Клиентский матчинг: +${matched} анимаций`);
+    }
   }
   return all;
 }
@@ -1354,6 +1560,9 @@ async function renderMusicPage(mode='artists', artistFilter=null, albumFilter=nu
     document.getElementById('musicPageTitle').textContent='Все треки';
     renderTracks([...all].sort((a,b)=>b.dateAdded-a.dateAdded),grid);return;
   }
+  if(mode==='artist_page'&&artistFilter){
+    renderArtistPage(artistFilter,all);return;
+  }
 }
  
 function initTP(){document.getElementById('trackPanelTab').onclick=toggleTP;}
@@ -1361,29 +1570,72 @@ function toggleTP(){const p=document.getElementById('trackPanel');if(!p.classLis
 
 function showTP(artist,album,tracks){
   const p=document.getElementById('trackPanel');const inner=document.getElementById('trackPanelInner');
-  let cu = null;
-  if (dynCover && MP.trackId) {
-    const currentTrack = tracks.find(t => t.id === MP.trackId);
-    if (currentTrack) cu = getCover(currentTrack);
+
+  // 1. Ищем анимацию по названию АЛЬБОМА (не по текущему треку)
+  let albumAnim = null;
+  if (animCoversEnabled) {
+    albumAnim = matchAnimForAlbum(album, artist);
   }
-  if (!cu) cu = getAlbumCover(tracks);
+
+  // 2. Ищем статическую обложку среди треков альбома
+  let cu = null;
+  for (const t of tracks) {
+    cu = getCover(t);
+    if (cu) break;
+  }
+
+  // 3. Формируем HTML обложки
+  let coverHtml;
+  if (animCoversEnabled && albumAnim) {
+    const acUrl = albumAnim.animCoverUrl.startsWith('/') ? (SERVER_API + albumAnim.animCoverUrl) : albumAnim.animCoverUrl;
+    coverHtml = animCoverHtml(acUrl, albumAnim.animCoverType, false);
+  } else if (cu) {
+    coverHtml = `<img class="track-panel-cover" src="${cu}" alt="">`;
+  } else {
+    coverHtml = `<div class="track-panel-cover-ph"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="19" x2="12" y2="22"/></svg></div>`;
+    // асинхронно догружаем статическую обложку
+    (async()=>{
+      const cu2 = await getAlbumCoverAsync(tracks);
+      if (cu2) {
+        const cw3 = inner.querySelector('.tp-cover-wrap');
+        if (cw3 && cw3.innerHTML.includes('cover-ph')) cw3.innerHTML = `<img class="track-panel-cover" src="${cu2}" alt="">`;
+      }
+    })();
+  }
+
   inner.innerHTML='';
   const cw=document.createElement('div');cw.className='tp-cover-wrap';
-  if(cu){
-    cw.innerHTML=`<img class="track-panel-cover" src="${cu}" alt="">`;
-  } else {
-    cw.innerHTML=`<div class="track-panel-cover-ph"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="19" x2="12" y2="22"/></svg></div>`;
-    getAlbumCoverAsync(tracks).then(cu2=>{if(cu2)cw.innerHTML=`<img class="track-panel-cover" src="${cu2}" alt="">`;});
-  }
+  cw.style.cssText='border-radius:10px;overflow:hidden;';
+  cw.innerHTML=coverHtml;
   inner.appendChild(cw);
+  syncAnimCovers();
+
   const meta=document.createElement('div');meta.innerHTML=`<div class="tp-title">${album}</div><div class="tp-artist">${artist}</div>`;inner.appendChild(meta);
   const div=document.createElement('div');div.style.cssText='height:1px;background:var(--b);margin:10px 0';inner.appendChild(div);
   const list=document.createElement('div');list.id='tpTrackList';
-  tracks.forEach(t=>{
-    const item=document.createElement('div');item.className='tp-track'+(MP.trackId===t.id?' playing':'')+(getTrackLikeStateSync(t.id)===1?' liked':'');item.dataset.tid=t.id;
+  
+  // Получаем актуальную очередь для проверки текущего трека
+  const activeQ = MP.shuffle ? MP.shuffled : MP.queue;
+  
+  tracks.forEach(t => {
+    const item=document.createElement('div');
+    item.className='tp-track'+(MP.trackId===t.id?' playing':'')+(getTrackLikeStateSync(t.id)===1?' liked':'');
+    item.dataset.tid=t.id;
     const etn=effectiveTrackNumber(t);
     item.innerHTML=`<span class="tp-track-num">${etn<999999?etn:'—'}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.title||t.name}</span>`;
-    item.onclick=()=>mPlay(t.id);list.appendChild(item);
+    
+    // Устанавливаем очередь ТОЛЬКО при клике на трек
+    item.onclick = () => {
+      // Устанавливаем очередь из текущего списка треков
+      MP.queue = tracks.map(x => x.id);
+      if (MP.shuffle) MP.shuffled = mShuffleArr(MP.queue);
+      const q = MP.shuffle ? MP.shuffled : MP.queue;
+      MP.queueIdx = q.indexOf(t.id);
+      if (MP.queueIdx === -1) MP.queueIdx = 0;
+      mPlay(t.id);
+    };
+    
+    list.appendChild(item);
   });
   inner.appendChild(list);
   tpVisible=true;p.classList.add('show');p.classList.remove('collapsed');
@@ -1391,10 +1643,11 @@ function showTP(artist,album,tracks){
 
 function hlTrack(id){document.querySelectorAll('#tpTrackList .tp-track').forEach(el=>el.classList.toggle('playing',el.dataset.tid===id));}
 function showAlbum(artist,album,tracks){
+  MS.mode='tracks';MS.artist=artist;MS.album=album;
   const sorted=[...tracks].sort((a,b)=>effectiveTrackNumber(a)-effectiveTrackNumber(b));
-  MP.queue=sorted.map(t=>t.id);if(MP.shuffle)MP.shuffled=mShuffleArr(MP.queue);
   showTP(artist,album,sorted);
 }
+
 function updateBreadcrumb(mode,artist,album){
   const nav=document.getElementById('musicNav');nav.innerHTML='';
   const add=(l,fn)=>{const s=document.createElement('span');s.className='crumb';s.textContent=l;if(fn)s.onclick=fn;nav.appendChild(s);};
@@ -1407,9 +1660,12 @@ function updateBreadcrumb(mode,artist,album){
   if(mode==='artist_page'&&artist){const s=document.createElement('span');s.textContent=artist;nav.appendChild(s);}
 }
  
+const BANNER_ROTATE_HOURS = 6;
+function bannerBust(){return Math.floor(Date.now()/(BANNER_ROTATE_HOURS*3600*1000));}
+
 const COVERS_BASE = 'http://localhost:3001/covers';
 function getArtistCoverUrl(name,type='profile'){
-  return `${COVERS_BASE}/${encodeURIComponent(name)}_${type}.jpg`;
+  return `${COVERS_BASE}/${encodeURIComponent(name)}_${type}.jpg?_rot=${bannerBust()}`;
 }
 
 async function renderArtistPage(artistName,allTracks){
@@ -1429,10 +1685,11 @@ async function renderArtistPage(artistName,allTracks){
   const banner=document.createElement('div');banner.className='artist-banner';
   const bannerImg=document.createElement('img');
   bannerImg.onerror=()=>bannerImg.remove();
+  const bRot=bannerBust();
   const tryBannerUrls=[
-    `${COVERS_BASE}/${encodeURIComponent(artistName)}_banner%20(1).jpg`,
-    `${COVERS_BASE}/${encodeURIComponent(artistName)}_banner%20(2).jpg`,
-    `${COVERS_BASE}/${encodeURIComponent(artistName)}_banner.jpg`,
+    `${COVERS_BASE}/${encodeURIComponent(artistName)}_banner%20(1).jpg?_rot=${bRot}`,
+    `${COVERS_BASE}/${encodeURIComponent(artistName)}_banner%20(2).jpg?_rot=${bRot}`,
+    `${COVERS_BASE}/${encodeURIComponent(artistName)}_banner.jpg?_rot=${bRot}`,
   ];
   let bannerIdx=0;
   let heroCopy=null;
@@ -1455,9 +1712,9 @@ async function renderArtistPage(artistName,allTracks){
   const heroAv=document.createElement('div');heroAv.className='artist-hero-avatar';
   const avImg=document.createElement('img');
   const tryProfileUrls=[
-    `${COVERS_BASE}/${encodeURIComponent(artistName)}_profile%20(1).jpg`,
-    `${COVERS_BASE}/${encodeURIComponent(artistName)}_profile%20(2).jpg`,
-    `${COVERS_BASE}/${encodeURIComponent(artistName)}_profile.jpg`,
+    `${COVERS_BASE}/${encodeURIComponent(artistName)}_profile%20(1).jpg?_rot=${bRot}`,
+    `${COVERS_BASE}/${encodeURIComponent(artistName)}_profile%20(2).jpg?_rot=${bRot}`,
+    `${COVERS_BASE}/${encodeURIComponent(artistName)}_profile.jpg?_rot=${bRot}`,
   ];
   let profIdx=0;
   const tryNextProfile=()=>{if(profIdx<tryProfileUrls.length){avImg.src=tryProfileUrls[profIdx++];avImg.onerror=tryNextProfile;}else{avImg.remove();heroAv.textContent=artistName.charAt(0).toUpperCase();}};
@@ -1466,7 +1723,6 @@ async function renderArtistPage(artistName,allTracks){
   const heroInfo=document.createElement('div');heroInfo.className='artist-hero-info';
   heroInfo.innerHTML=`<div class="artist-hero-name">${artistName}</div><div class="artist-hero-stats">${at.length} треков · ${alMap.size} альбомов</div>`;
   hero.append(heroAv,heroInfo);
-  // hero живёт внутри баннера (SoundCloud-стиль)
   banner.appendChild(hero);
   bannerWrap.appendChild(banner);
 
@@ -1498,11 +1754,13 @@ let musicTrackPage=0;const MUSIC_PAGE_SIZE=100;
 function renderTracks(tracks,container){
   container.innerHTML='';
   if(!tracks.length){container.innerHTML='<div class="music-empty"><h3>Треков не найдено</h3></div>';return;}
-  MP.queue=tracks.map(t=>t.id);if(MP.shuffle)MP.shuffled=mShuffleArr(MP.queue);
+  
+  // Сохраняем отображаемые треки для пагинации
   const totalPages=Math.max(1,Math.ceil(tracks.length/MUSIC_PAGE_SIZE));
   if(musicTrackPage>=totalPages)musicTrackPage=totalPages-1;
   if(musicTrackPage<0)musicTrackPage=0;
   const vis=tracks.slice(musicTrackPage*MUSIC_PAGE_SIZE,(musicTrackPage+1)*MUSIC_PAGE_SIZE);
+  
   for(const t of vis){
     const card=document.createElement('div');card.className='mc'+(MP.trackId===t.id?' playing':'');card.dataset.id=t.id;
     const cu=getCover(t);let artHtml;
@@ -1513,7 +1771,29 @@ function renderTracks(tracks,container){
     const likeState=getTrackLikeStateSync(t.id);
     const likeBtnHtml=`<button class="mc-like-btn${likeState===1?' liked':''}${likeState===-1?' disliked':''}" data-id="${t.id}" title="Нравится">${likeState===1?ICONS.likeFilled:(likeState===-1?ICONS.dislikeFilled:ICONS.like)}</button>`;
     card.innerHTML=`<div class="mc-art">${artHtml}<div class="mc-play-ov"><span>${ICONS[isP?'pause':'play']}</span></div>${likeBtnHtml}</div><div class="mc-info"><div class="mc-title">${num}${t.title||t.name}</div><div class="mc-artist">${t.artist||t.album||'—'}</div></div>`;
-    card.onclick=()=>{if(MP.trackId===t.id){if(MP.audio.paused){MP.audio.play().catch(()=>{});setIcon(document.getElementById('mPlay'),'pause');}else mPause();}else mPlay(t.id);};
+    
+    // Устанавливаем очередь ТОЛЬКО при клике на трек
+    card.onclick = () => {
+      if (MP.trackId === t.id) {
+        if (MP.audio.paused) {
+          MP.audio.play().catch(() => {});
+          setIcon(document.getElementById('mPlay'), 'pause');
+          playAnimCovers();
+          refreshPlayingCards(t.id);
+        } else {
+          mPause();
+        }
+      } else {
+        // Устанавливаем очередь из текущего списка треков
+        MP.queue = tracks.map(x => x.id);
+        if (MP.shuffle) MP.shuffled = mShuffleArr(MP.queue);
+        const q = MP.shuffle ? MP.shuffled : MP.queue;
+        MP.queueIdx = q.indexOf(t.id);
+        if (MP.queueIdx === -1) MP.queueIdx = 0;
+        mPlay(t.id);
+      }
+    };
+    
     card.querySelector('.mc-like-btn').addEventListener('click', async e=>{
       e.stopPropagation();
       const track=await resolveTrackObj(t.id);
@@ -1525,13 +1805,24 @@ function renderTracks(tracks,container){
     });
     container.appendChild(card);
   }
+  
   if(totalPages>1){
     const pager=document.createElement('div');
     pager.style.cssText='grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:14px;padding:20px 0;color:var(--t2);width:100%;';
     const mkBtn=(label,disabled,onClick)=>{const b=document.createElement('button');b.textContent=label;b.disabled=disabled;b.style.cssText=`background:${disabled?'#1a1a1a':'var(--a)'};color:${disabled?'#666':'#000'};border:none;padding:8px 16px;border-radius:8px;font-weight:600;cursor:${disabled?'default':'pointer'};`;if(!disabled)b.onclick=onClick;return b;};
-    pager.appendChild(mkBtn('← Назад',musicTrackPage===0,()=>{musicTrackPage--;renderTracks(tracks,container);}));
+    
+    // Пагинация НЕ трогает очередь
+    pager.appendChild(mkBtn('← Назад',musicTrackPage===0,()=>{
+      musicTrackPage--;
+      renderTracks(tracks,container);
+    }));
+    
     const info=document.createElement('span');info.textContent=`Страница ${musicTrackPage+1} из ${totalPages} (${tracks.length} треков)`;pager.appendChild(info);
-    pager.appendChild(mkBtn('Вперёд →',musicTrackPage>=totalPages-1,()=>{musicTrackPage++;renderTracks(tracks,container);}));
+    
+    pager.appendChild(mkBtn('Вперёд →',musicTrackPage>=totalPages-1,()=>{
+      musicTrackPage++;
+      renderTracks(tracks,container);
+    }));
     container.appendChild(pager);
   }
 }
@@ -1593,7 +1884,105 @@ async function ensureServerOrientations(items, concurrency = 4) {
 }
 const serverMusicMap = new Map();
 const localFallbackStreamUrl = new Map();
+const localAnimMap = new Map();  // localTrackId → { animCoverUrl, animCoverType }
  
+
+// ══════════════════════════════════════════════════════════════
+// КЛИЕНТСКИЙ МАТЧИНГ АНИМИРОВАННЫХ ОБЛОЖЕК
+// Если сервер не сопоставил анимацию с треком — ищем сами
+// по названию альбома, исполнителя или трека
+// ══════════════════════════════════════════════════════════════
+let animCoversCache = null;
+let animCoversCacheAt = 0;
+const ANIM_CACHE_TTL = 120000; // 2 минуты
+
+async function ensureAnimCoversCache() {
+  const now = Date.now();
+  if (animCoversCache && (now - animCoversCacheAt) < ANIM_CACHE_TTL) return animCoversCache;
+  if (!serverOnline) return animCoversCache || [];
+  try {
+    const res = await fetchWithTimeout(`${SERVER_API}/library/anim-covers`, {}, 8000);
+    const data = await res.json();
+    animCoversCache = (data.items && Array.isArray(data.items)) ? data.items : [];
+    animCoversCacheAt = now;
+    return animCoversCache;
+  } catch(e) {
+    return animCoversCache || [];
+  }
+}
+
+function matchAnimForTrack(track) {
+  if (!track || !animCoversCache || !animCoversCache.length) return null;
+
+  const namesToTry = [];
+  if (track.album && track.album !== 'Без альбома') namesToTry.push(track.album);
+  if (track.artist && track.artist !== 'Неизвестный') namesToTry.push(track.artist);
+  if (track.title) namesToTry.push(track.title);
+  if (track.name) namesToTry.push(track.name);
+
+  const tryFind = (onlyWebM) => {
+    for (const name of namesToTry) {
+      const q = name.toLowerCase().trim();
+      for (const ac of animCoversCache) {
+        const isWebM = (ac.type || '').toLowerCase() === 'video/webm';
+        if (onlyWebM && !isWebM) continue;
+        if (!onlyWebM && isWebM) continue;
+
+        if (ac.name && ac.name.toLowerCase() === q) {
+          return { animCoverUrl: ac.streamUrl.startsWith('/') ? SERVER_API + ac.streamUrl : ac.streamUrl, animCoverType: ac.type || 'image/gif' };
+        }
+        if (ac.name && ac.name.toLowerCase().includes(q)) {
+          return { animCoverUrl: ac.streamUrl.startsWith('/') ? SERVER_API + ac.streamUrl : ac.streamUrl, animCoverType: ac.type || 'image/gif' };
+        }
+        if (ac.matchedAlbums && ac.matchedAlbums.some(a => a.toLowerCase() === q)) {
+          return { animCoverUrl: ac.streamUrl.startsWith('/') ? SERVER_API + ac.streamUrl : ac.streamUrl, animCoverType: ac.type || 'image/gif' };
+        }
+      }
+    }
+    return null;
+  };
+
+  return tryFind(true) || tryFind(false);
+}
+
+function matchAnimForAlbum(album, artist) {
+  if (!album || album === 'Без альбома' || !animCoversCache || !animCoversCache.length) return null;
+  const namesToTry = [album];
+  // НЕ ищем по artist — иначе трек-специфичные анимации артиста залипают на все его альбомы
+
+  const tryFind = (onlyWebM) => {
+    for (const name of namesToTry) {
+      const q = name.toLowerCase().trim();
+      for (const ac of animCoversCache) {
+        const isWebM = (ac.type || '').toLowerCase() === 'video/webm';
+        if (onlyWebM && !isWebM) continue;
+        if (!onlyWebM && isWebM) continue;
+
+        if (ac.name && ac.name.toLowerCase() === q) {
+          return { animCoverUrl: ac.streamUrl.startsWith('/') ? SERVER_API + ac.streamUrl : ac.streamUrl, animCoverType: ac.type || 'image/gif' };
+        }
+        if (ac.name && ac.name.toLowerCase().includes(q)) {
+          return { animCoverUrl: ac.streamUrl.startsWith('/') ? SERVER_API + ac.streamUrl : ac.streamUrl, animCoverType: ac.type || 'image/gif' };
+        }
+        if (ac.matchedAlbums && ac.matchedAlbums.some(a => a.toLowerCase() === q)) {
+          return { animCoverUrl: ac.streamUrl.startsWith('/') ? SERVER_API + ac.streamUrl : ac.streamUrl, animCoverType: ac.type || 'image/gif' };
+        }
+      }
+    }
+    return null;
+  };
+
+  return tryFind(true) || tryFind(false);
+}
+
+// Загрузка по требованию (вызывается только из buildAllTracks / mPlay / resolveTrackObj)
+async function preloadAnimCovers() {
+  if (animCoversEnabled && serverOnline) {
+    await ensureAnimCoversCache();
+    console.log(`[anim] Загружено ${animCoversCache ? animCoversCache.length : 0} анимированных обложек`);
+  }
+}
+
 // ── Init ──
  
 async function init(){
@@ -1603,6 +1992,11 @@ async function init(){
   initEvents();initMusicCtrl();initSearch();initTP();initPlayerControls();
   await checkServerStatus();
   setInterval(checkServerStatus, 20000);
+  setInterval(()=>{
+    if(curPage==='music'&&MS.mode==='artist_page'&&MS.artist){
+      buildAllTracks().then(all=>renderArtistPage(MS.artist,all));
+    }
+  }, BANNER_ROTATE_HOURS*3600*1000);
   updateNotice();await renderPage();
   (async()=>{
     const restored=await restoreHandle();
