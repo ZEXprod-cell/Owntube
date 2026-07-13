@@ -160,9 +160,9 @@ button{font-family:inherit;cursor:pointer}
 .music-nav .crumb{cursor:pointer;color:var(--a);text-decoration:underline}
 .music-nav .crumb:hover{color:#fff}
 .music-nav .sep{color:var(--b)}
-.artist-card{background:var(--c);border-radius:12px;padding:16px;cursor:pointer;transition:.15s;text-align:center;width:100%;display:flex;flex-direction:column;align-items:center}
+.artist-card{background:var(--c);border-radius:12px;padding:16px;cursor:pointer;transition:.15s;text-align:center;width:170px;min-width:130px;display:flex;flex-direction:column;align-items:center}
 .artist-card:hover{background:#2a2a2a;transform:translateY(-3px)}
-.artist-avatar{width:100px;height:100px;border-radius:50%;margin:0 auto 10px;overflow:hidden;background:#1e1e1e;display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0}
+.artist-avatar{width:100px;height:100px;border-radius:50%;margin:0 auto 10px;overflow:hidden;background:#1e1e1e;display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0;border:none}
 .artist-name{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;width:100%}
 .artist-count{font-size:11px;color:var(--t2);margin-top:3px;text-align:center;width:100%}
 
@@ -233,7 +233,7 @@ button{font-family:inherit;cursor:pointer}
 .artist-banner-overlay{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.05) 0%,rgba(0,0,0,.65) 100%)}
 /* Герой — поверх баннера, прибит к низу */
 .artist-hero{position:absolute;bottom:0;left:0;right:0;display:flex;align-items:flex-end;gap:16px;padding:16px 24px;z-index:2}
-.artist-hero-avatar{width:90px;height:90px;border-radius:50%;overflow:hidden;background:#1e1e1e;border:3px solid rgba(255,255,255,.15);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:700;color:var(--a)}
+.artist-hero-avatar{width:90px;height:90px;border-radius:50%;overflow:hidden;background:#1e1e1e;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:700;color:var(--a)}
 .artist-hero-avatar img{width:100%;height:100%;object-fit:cover;display:block}
 .artist-hero-info{padding-bottom:4px}
 .artist-hero-name{font-size:26px;font-weight:800;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.9)}
@@ -354,11 +354,42 @@ button{font-family:inherit;cursor:pointer}
 }
 @media(max-width:640px){
   .side{display:none}.main,.vp{margin-left:0}.vc{width:100%!important}.vc.vert{width:50%!important}
-  .mbar{left:0}.mbar-meta{display:none}.mc{width:calc(50% - 8px)}
+  .mbar{left:0}.mbar-meta{display:none}.mc{width:calc(50% - 8px)}.artist-card{width:130px;min-width:130px}
   .track-panel{width:200px}.track-panel.show.collapsed{transform:translateX(200px)}
   .music-page{margin-left:0}.dl-page{margin-left:0}
   .dl-inline input{width:120px}.dl-inline select{font-size:11px;padding:0 6px}.dl-inline button{font-size:11px;padding:0 12px}
 }
+
+/* ── ANIM COVERS (GIF/WebM rounding) ── */
+.anim-cover { border-radius: inherit; }
+.tp-cover-wrap { border-radius: 10px; overflow: hidden; }
+
+/* ── ANIM COVERS MANAGEMENT MODAL ── */
+.acm{position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:300;opacity:0;pointer-events:none;transition:.3s;backdrop-filter:blur(4px)}
+.acm.on{opacity:1;pointer-events:all}
+.acm-inner{background:var(--s);border-radius:var(--r);padding:24px;max-width:700px;width:92%;max-height:80vh;display:flex;flex-direction:column}
+.acm-inner h2{margin-bottom:6px}
+.acm-sub{color:var(--t2);font-size:13px;margin-bottom:14px}
+.acm-search{width:100%;background:var(--c);border:1px solid var(--b);border-radius:8px;color:#fff;padding:10px 14px;font-size:14px;outline:0;margin-bottom:12px;transition:border .2s}
+.acm-search:focus{border-color:var(--a)}
+.acm-list{flex:1;overflow-y:auto;min-height:0;max-height:50vh}
+.acm-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;transition:background .12s;cursor:default}
+.acm-item:hover{background:#272727}
+.acm-item-thumb{width:48px;height:48px;border-radius:6px;object-fit:cover;background:#222;flex-shrink:0;overflow:hidden;position:relative}
+.acm-item-thumb img,.acm-item-thumb video{width:100%;height:100%;object-fit:cover;display:block}
+.acm-item-info{flex:1;min-width:0}
+.acm-item-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acm-item-type{font-size:11px;color:var(--t2)}
+.acm-item-actions{display:flex;gap:6px;flex-shrink:0}
+.acm-btn{border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:.15s}
+.acm-btn-set{background:var(--a);color:#000}
+.acm-btn-set:hover{background:var(--a2)}
+.acm-btn-remove{background:#e94560;color:#fff}
+.acm-btn-remove:hover{background:#c73850}
+.acm-badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px}
+.acm-badge.on{background:rgba(0,255,133,.15);color:var(--a)}
+.acm-footer{margin-top:14px;text-align:right}
+.acm-empty{text-align:center;padding:30px;color:var(--t2)}
 
 /* ── SERVER LIBRARY (стриминг с сервера) ── */
 .snav{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:10px;cursor:pointer;color:var(--t2);font-size:14px;transition:.15s;overflow:hidden;width:100%}
@@ -531,6 +562,16 @@ button{font-family:inherit;cursor:pointer}
       </label>
       <div class="toggle-sw"><input type="checkbox" id="toggleDynCover"><span class="slider"></span></div>
     </div>
+    <div class="toggle-row">
+      <label for="toggleAnimCovers" style="cursor:pointer">
+        Анимированные обложки
+        <small>GIF/WebM из папки anim — совпадение по названию альбома или файла</small>
+      </label>
+      <div class="toggle-sw"><input type="checkbox" id="toggleAnimCovers"><span class="slider"></span></div>
+    </div>
+    <div style="margin-top:4px;margin-bottom:14px">
+      <button id="manageAnimCoversBtn" style="background:var(--c);color:var(--t);border:1px solid var(--b);padding:10px 18px;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;transition:.15s">🎞️ Просмотр аним. обложек с сервера</button>
+    </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;margin-bottom:16px">
       <button id="exportBtn" style="background:var(--a);color:#000;border:none;padding:10px 20px;border-radius:8px;font-weight:600;cursor:pointer">Экспорт JSON</button>
       <button id="importBtn" style="background:var(--a);color:#000;border:none;padding:10px 20px;border-radius:8px;font-weight:600;cursor:pointer">Импорт JSON</button>
@@ -546,6 +587,19 @@ button{font-family:inherit;cursor:pointer}
 </div>
 
 <input type="file" id="jsonInput" accept=".json" hidden>
+
+<!-- ANIM COVERS MODAL -->
+<div class="acm" id="animCoversMo">
+  <div class="acm-inner">
+    <h2>🎞️ Анимированные обложки</h2>
+    <div class="acm-sub">Анимации из папки F:\(8 фелиал АДА)\sLOW\anim — совпадение по названию альбома или файла.</div>
+    <input type="text" class="acm-search" id="acmSearch" placeholder="Поиск по названию...">
+    <div class="acm-list" id="acmList"></div>
+    <div class="acm-footer">
+      <button id="acmClose" style="background:var(--a);color:#000;border:none;padding:10px 20px;border-radius:8px;font-weight:600;cursor:pointer">Закрыть</button>
+    </div>
+  </div>
+</div>
 
 <!-- MUSIC PAGE -->
 <div class="music-page" id="musicPage">
@@ -723,5 +777,6 @@ document.getElementById('dlUrlInline').addEventListener('keypress', e => {
 
 </script>
 
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a19d927deaef1864',t:'MTc4MzgzMzM0OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a19eb6accbd01864',t:'MTc4Mzg0NTMxNg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script defer src="https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1a684c398091862',t:'MTc4MzkyNzE1OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
