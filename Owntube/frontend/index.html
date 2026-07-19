@@ -569,6 +569,7 @@ button{font-family:inherit;cursor:pointer}
       </label>
       <div class="toggle-sw"><input type="checkbox" id="toggleAnimCovers"><span class="slider"></span></div>
     </div>
+
     <div style="margin-top:4px;margin-bottom:14px">
       <button id="manageAnimCoversBtn" style="background:var(--c);color:var(--t);border:1px solid var(--b);padding:10px 18px;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;transition:.15s">🎞️ Просмотр аним. обложек с сервера</button>
     </div>
@@ -655,8 +656,13 @@ button{font-family:inherit;cursor:pointer}
 </div>
 <div class="mbar-tab" id="mbarTab" title="Открыть/закрыть плеер">♪</div>
 
+<!-- ===== AUTH GATE — ПЕРВЫЙ СКРИПТ ===== -->
+<script src="js/auth-gate.js"></script>
+
+<!-- ===== ОСНОВНОЙ APP ===== -->
 <script type="module" src="js/app.js"></script>
 
+<!-- ===== ВСТРОЕННАЯ СКАЧИВАЛКА (использует window.owntubeAuthHeader) ===== -->
 <script>
 // ══════════ СКРИПТ ДЛЯ НОВОЙ СКАЧИВАЛКИ В ХЕДЕРЕ ══════════
 
@@ -719,10 +725,10 @@ async function startDownloadInline() {
   text.textContent = 'Запуск yt-dlp...';
 
   try {
-    const res = await fetch(`${DOWNLOAD_API}/download`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
+const res = await fetch(`${DOWNLOAD_API}/download`, {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json', ...window.owntubeAuthHeader()},
+  body: JSON.stringify({
         url, 
         type, 
         quality, 
@@ -777,6 +783,5 @@ document.getElementById('dlUrlInline').addEventListener('keypress', e => {
 
 </script>
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a19d927deaef1864',t:'MTc4MzgzMzM0OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a19eb6accbd01864',t:'MTc4Mzg0NTMxNg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script defer src="https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1a684c398091862',t:'MTc4MzkyNzE1OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>

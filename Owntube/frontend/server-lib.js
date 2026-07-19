@@ -1,14 +1,12 @@
 // ══════════════════════════════════════════════════════════════
 // SERVER LIBRARY — серверная библиотека (стриминг с диска через сервер)
-// Полностью независим от основной системы (IndexedDB/локальные папки),
-// поэтому ничего в app.js не трогает.
 // ══════════════════════════════════════════════════════════════
 (() => {
   'use strict';
 
-  // Адрес сервера вычисляем динамически: с какого хоста открыт сайт (ПК или телефон
-  // в локальной сети), на тот же хост и стучимся, просто на порт 3001
   const API = 'http://localhost:3001';
+  // ⚠️ Тот же токен, что в backend/config.js (API_TOKEN / OWNTUBE_TOKEN)
+  const API_TOKEN = 'ЗАМЕНИ_НА_СВОЙ_ДЛИННЫЙ_СЛУЧАЙНЫЙ_ТОКЕН';
 
   const navBtn = document.getElementById('serverLibBtn');
   const page = document.getElementById('serverLibPage');
@@ -22,7 +20,7 @@
   const audioEl = document.getElementById('slibAudio');
   const audioTitle = document.getElementById('slibAudioTitle');
 
-  let mode = 'video'; // 'video' | 'music'
+  let mode = 'video';
   let cache = { video: null, music: null };
   let opened = false;
 
@@ -34,8 +32,6 @@
   }
 
   function hideAllOtherPages() {
-    // Скрываем стандартные страницы так же, как это делает их собственный CSS-класс,
-    // не вызывая внутренние функции app.js (они в замкнутой области видимости).
     document.getElementById('mainC')?.style.setProperty('display', 'none');
     document.getElementById('vp')?.classList.remove('on');
     document.getElementById('musicPage')?.classList.remove('on');
@@ -56,7 +52,12 @@
 
   async function fetchLibrary(kind) {
     if (cache[kind]) return cache[kind];
-    const res = await fetch(`${API}/library/${kind}`);
+    // ✅ /library/* теперь требует токен — добавлен заголовок Authorization.
+    // Сам стриминг (streamUrl) заголовок не несёт и не должен — он открыт.
+    const res = await fetch(`${API}/library/${kind}`, {
+      headers: { 'Authorization': 'Bearer ' + API_TOKEN }
+    });
+    if (res.status === 401) throw new Error('неверный токен доступа');
     if (!res.ok) throw new Error('Сервер ответил ' + res.status);
     const data = await res.json();
     cache[kind] = data.items || [];
@@ -102,6 +103,8 @@
   }
 
   function play(item) {
+    // streamUrl грузится напрямую через src — без заголовков, это открытый роут
+    // на backend (см. server.js), токен тут не нужен и не сработает.
     playerWrap.style.display = 'block';
     markPlaying(item.relativePath);
 
@@ -157,7 +160,6 @@
     load();
   });
 
-  // Если пользователь ушёл на другой обычный пункт меню — закрываем нашу страницу
   document.querySelectorAll('.si').forEach(el => {
     el.addEventListener('click', () => {
       if (opened) {

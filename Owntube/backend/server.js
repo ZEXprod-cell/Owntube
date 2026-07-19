@@ -1,21 +1,19 @@
 const express = require('express');
-const cors = require('cors');
 const compression = require('compression');
 const os = require('os');
 
 const { PORT, DEFAULT_DOWNLOADS_DIR } = require('./config');
+const corsMiddleware = require('./middleware/cors');
+const authMiddleware = require('./middleware/auth');
+const authRoutes = require('./routes/auth');
 const filesRoutes = require('./routes/files');
 const downloadRoutes = require('./routes/download');
 const libraryRoutes = require('./routes/library');
 
 const app = express();
 
-app.use(cors({
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-app.use(compression());              // gzip — JSON библиотеки в разы легче
+app.use(corsMiddleware);
+app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 
 // Лёгкое логирование медленных/ошибочных запросов
@@ -30,11 +28,16 @@ app.use((req, res, next) => {
   next();
 });
 
+// /auth/register и /auth/login выдают токен — сами не защищены токеном.
+app.use(authRoutes);
+
+app.use(authMiddleware);
+
 app.use(filesRoutes);
 app.use(downloadRoutes);
 app.use(libraryRoutes);
 
-// Лёгкий health-check для клиента (быстрее чем /library/video)
+// Лёгкий health-check для клиента (без токена)
 app.get('/health', (req, res) => {
   res.json({ ok: true, uptime: process.uptime(), timestamp: Date.now() });
 });

@@ -79,36 +79,40 @@ function norm(s) {
     .trim();
 }
 
-let animMap = null;
-let animCacheTime = 0;
+// ───────────────────── НОВЫЙ АСИНХРОННЫЙ СКАН ─────────────────────
+let animMap = new Map(); // всегда актуальный, готовый к чтению снапшот
 const ANIM_CACHE_TTL = 60000;
 
-function scanAnimDir() {
-  const now = Date.now();
-  if (animMap && (now - animCacheTime) < ANIM_CACHE_TTL) return animMap;
-
-  animMap = new Map();
+// Асинхронный скан — НЕ блокирует event loop. Работает только в фоне,
+// никогда не вызывается изнутри обработки запроса.
+async function refreshAnimMapAsync() {
+  const next = new Map();
 
   if (!fs.existsSync(ANIM_DIR)) {
     console.warn('[anim] папка не найдена:', ANIM_DIR);
-    animCacheTime = now;
-    return animMap;
+    animMap = next;
+    return;
   }
 
   try {
-    function walk(dir) {
-      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    async function walk(dir) {
+      let entries;
+      try {
+        entries = await fs.promises.readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
         const abs = path.join(dir, e.name);
-        if (e.isDirectory()) { walk(abs); continue; }
+        if (e.isDirectory()) { await walk(abs); continue; }
         const ext = path.extname(e.name).toLowerCase();
         if (!ANIM_EXTENSIONS.includes(ext)) continue;
         const nameNorm = norm(path.basename(e.name, ext));
         const type = ext === '.gif' ? 'image/gif' : 'video/webm';
         const relFromAnim = path.relative(ANIM_DIR, abs).replace(/\\/g, '/');
-        const existing = animMap.get(nameNorm);
-        // WebM приоритет над GIF
+        const existing = next.get(nameNorm);
         if (!existing || ext === '.webm') {
-          animMap.set(nameNorm, {
+          next.set(nameNorm, {
             filename: e.name,
             relPath: relFromAnim,
             type,
@@ -117,15 +121,24 @@ function scanAnimDir() {
         }
       }
     }
-    walk(ANIM_DIR);
+    await walk(ANIM_DIR);
+    animMap = next;
     console.log(`[anim] найдено ${animMap.size} аним. обложек в ${ANIM_DIR}`);
   } catch (err) {
     console.error('[anim] ошибка сканирования:', err.message);
   }
+}
 
-  animCacheTime = now;
+// Синхронный геттер — просто отдаёт текущий снапшот, ничего не читает с диска.
+function scanAnimDir() {
   return animMap;
 }
+
+// Фоновое обновление: сразу при старте (не блокируя запуск сервера — не awaitим)
+// и затем каждые ANIM_CACHE_TTL.
+refreshAnimMapAsync();
+setInterval(refreshAnimMapAsync, ANIM_CACHE_TTL);
+// ──────────────────── КОНЕЦ НОВОГО БЛОКА ─────────────────────
 
 // Найти аним-обложку для музыкального трека
 function findAnimCoverForTrack(tags, name) {
@@ -525,6 +538,29 @@ router.post('/library/music/refresh', async (req, res) => {
   res.json({ ok: true, count: (musicLibraryCache || []).length });
 });
 
+// Обновление мета-полей трека (normGain и т.д.) — не трогает теги файла, только кэш
+const ALLOWED_META_FIELDS = ['normGain', 'liked', 'userNote'];
+router.patch('/library/music/meta', (req, res) => {
+  try {
+    const { id, ...fields } = req.body;
+    if (!id) return res.status(400).json({ error: 'нет id' });
+    if (!musicLibraryCache) return res.status(503).json({ error: 'библиотека не загружена' });
+
+    const track = musicLibraryCache.find(t => t.id === id);
+    if (!track) return res.status(404).json({ error: 'трек не найден' });
+
+    // Обновляем только разрешённые поля
+    for (const [k, v] of Object.entries(fields)) {
+      if (ALLOWED_META_FIELDS.includes(k)) track[k] = v;
+    }
+    markMusicCacheDirty();
+    res.json({ ok: true, id, updated: Object.keys(fields).filter(k => ALLOWED_META_FIELDS.includes(k)) });
+  } catch(e) {
+    console.error('[PATCH /library/music/meta]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ============================================================
 // ОБЛОЖКИ — с диска
 // ============================================================
@@ -611,6 +647,5 @@ router.use('/stream/music', express.static(LIBRARY_MUSIC_DIR, {
 
 // Прогрев кэша при старте
 setTimeout(() => { console.log('[music] прогрев кэша...'); refreshMusicLibrary(); }, 1500);
-setTimeout(() => { scanAnimDir(); }, 3000);
 
 module.exports = router;

@@ -18,14 +18,7 @@ const VS={
   has(id){return this.FILES.has(id);},
   load(id){
     const f=this.get(id);if(!f)return null;
-    // Раньше здесь blob-URL для больших файлов (>50MB, т.е. длинные видео)
-    // отзывался принудительно через 8 секунд таймером — если видео не
-    // успевало полностью догрузиться/забуфериться за это время (обычное
-    // дело для длинных видео), URL становился невалидным прямо во время
-    // просмотра и плеер намертво зависал. Отзыв URL для больших файлов
-    // уже корректно выполняется в switchVid/resetApp/showDlPage при
-    // реальном закрытии/смене видео — досрочный таймер не нужен.
-    if(f.size>50*1024*1024){const u=URL.createObjectURL(f);return{url:u,type:'large'};}
+    if(f.size>50*1024*1024){const u=URL.createObjectURL(f);setTimeout(()=>URL.revokeObjectURL(u),8000);return{url:u,type:'large'};}
     if(this.RAM.has(id)){this._ord=this._ord.filter(x=>x!==id);this._ord.push(id);return{url:this.RAM.get(id),type:'small'};}
     const u=URL.createObjectURL(f);
     while(this._sz+f.size>this.MAX*1024*1024&&this._ord.length){
@@ -77,9 +70,6 @@ let tpAlbum = null; // альбом открытый в trackPanel (artist|album
  
 // ====================== SERVER INTEGRATION ======================
 const SERVER_API = 'http://localhost:3001';
-// ⚠️ Токен больше не хранится статически — используется window.owntubeAuthHeader()
-// (предоставляется auth-gate.js)
-
 let serverOnline = false;
 let serverLatency = 0;
 let wasOffline = false;
@@ -276,8 +266,7 @@ async function renderAcmList(query=''){
   const list=document.getElementById('acmList');
   let items=[];
   try{
-    // Используем window.owntubeAuthHeader() для авторизации
-    const res=await fetchWithTimeout(`${SERVER_API}/library/anim-covers`, { headers: window.owntubeAuthHeader() }, 8000);
+    const res=await fetchWithTimeout(`${SERVER_API}/library/anim-covers`,{},8000);
     const data=await res.json();
     items=data.items||[];
   }catch(e){
@@ -300,7 +289,7 @@ async function renderAcmList(query=''){
   list.innerHTML=items.map(it=>{
     const src=it.streamUrl.startsWith('/')?SERVER_API+it.streamUrl:it.streamUrl;
     const thumb=it.type==='video/webm'
-      ?`<video class="anim-cover" src="${src}" muted style="width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit;"></video>`
+      ?`<video class="anim-cover" src="${src}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit;"></video>`
       :`<img class="anim-cover" src="${src}" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit;" alt="">`;
     let matchHtml='';
     if(it.matchedTrackCount>0){
@@ -412,8 +401,7 @@ async function fetchVideoLibrary() {
   if (videoLibCache && (now - videoLibCacheAt) < LIB_CACHE_TTL) return videoLibCache;
   if (!serverOnline) return videoLibCache || loadLibFromLS(LS_VIDEO_LIB_KEY) || [];
   try {
-    // Используем window.owntubeAuthHeader() через opts
-    const data = await fetchJsonWithRetry(`${SERVER_API}/library/video`, { opts: { headers: window.owntubeAuthHeader() } });
+    const data = await fetchJsonWithRetry(`${SERVER_API}/library/video`);
     videoLibCache = (data.items && Array.isArray(data.items)) ? data.items : [];
     videoLibCacheAt = now;
     saveLibToLS(LS_VIDEO_LIB_KEY, videoLibCache);
@@ -715,42 +703,6 @@ function initPlayerControls(){
   function togglePlay(){player.paused?player.play().catch(()=>{}):player.pause();}
   btnPlay.onclick=togglePlay;
   player.addEventListener('click',togglePlay);
-
-  // ── Watchdog от "мёртвых" зависаний на длинных видео ──
-  // Раньше при обрыве/подвисании сети во время буферизации длинного видео
-  // плеер мог зависнуть навсегда без единого признака ошибки. Здесь ловим
-  // 'error' и длительный 'waiting' без прогресса и пробуем восстановиться
-  // однократным reload с той же позиции; если не помогает — сообщаем.
-  let stallTimer=null;
-  let lastStallTime=-1;
-  let recoverAttempted=false;
-  function clearStallTimer(){clearTimeout(stallTimer);stallTimer=null;}
-  function armStallTimer(){
-    clearStallTimer();
-    stallTimer=setTimeout(()=>{
-      if(player.paused||!curVidId)return;
-      recoverFromStall();
-    },15000);
-  }
-  function recoverFromStall(){
-    const t=player.currentTime;
-    if(t===lastStallTime && recoverAttempted){
-      alert('Видео зависло из-за проблем с сетью/сервером. Попробуйте переключить видео заново.');
-      recoverAttempted=false;lastStallTime=-1;
-      return;
-    }
-    lastStallTime=t;recoverAttempted=true;
-    const src=player.currentSrc||player.src;
-    player.load();
-    player.currentTime=t;
-    player.play().catch(()=>{});
-    armStallTimer();
-  }
-  player.addEventListener('waiting',armStallTimer);
-  player.addEventListener('playing',()=>{clearStallTimer();recoverAttempted=false;});
-  player.addEventListener('timeupdate',()=>{if(!player.paused)recoverAttempted=false;});
-  player.addEventListener('error',()=>{if(!player.paused||curVidId)recoverFromStall();});
-
   player.addEventListener('play',()=>{updatePlayIcon();showControls();});
   player.addEventListener('pause',()=>{updatePlayIcon();pc.classList.add('show');pb.classList.remove('no-cursor');clearTimeout(hideTimer);});
 
@@ -1108,15 +1060,12 @@ function updateBar(track){
           }
           // Если та же анимация — просто убеждаемся что она играет/паузит в такт аудио
         } else if (cu) {
-          // Не заменяем существующую анимированную обложку статичной картинкой
-          if (!cw.querySelector('.anim-cover')) {
-            const existingImg = cw.querySelector('img');
-            if (!existingImg || existingImg.src !== cu) {
-              cw.innerHTML = `<img class="track-panel-cover" src="${cu}" alt="">`;
-            }
+          const existingImg = cw.querySelector('img');
+          if (!existingImg || existingImg.src !== cu) {
+            cw.innerHTML = `<img class="track-panel-cover" src="${cu}" alt="">`;
           }
         } else {
-          if (!cw.querySelector('.track-panel-cover-ph') && !cw.querySelector('.anim-cover')) {
+          if (!cw.querySelector('.track-panel-cover-ph')) {
             cw.innerHTML = `<div class="track-panel-cover-ph"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg></div>`;
           }
         }
@@ -1282,27 +1231,24 @@ function refreshPlayingCards(id){
 }
 function pauseAnimCovers(){document.querySelectorAll('.tp-cover-wrap video.anim-cover').forEach(v=>v.pause());}
 function playAnimCovers(){
-  // Анимация в панели играет только если текущий трек из того же альбома
-  const shouldPlay = _tpTrackInPanel();
-  document.querySelectorAll('.tp-cover-wrap video.anim-cover').forEach(v=>{
-    if(shouldPlay) v.play().catch(()=>{});
-    else v.pause();
-  });
+  document.querySelectorAll('.tp-cover-wrap video.anim-cover').forEach(v=>v.play().catch(()=>{}));
 }
 function _tpTrackInPanel(){
   if(!tpAlbum || !MP.trackId) return false;
-  // Раньше здесь было сравнение "artist|album" строк для серверных треков,
-  // но t.album у трека и albumFilter, из которого строился tpAlbum, могли
-  // отличаться (trim, регистр, пустая строка vs 'Без альбома') — из-за этого
-  // сравнение почти всегда проваливалось и анимация не запускалась.
-  // Список #tpTrackList всегда содержит data-tid для всех треков текущей
-  // панели (локальных и серверных), поэтому надёжнее проверять через DOM.
+  // Находим трек из serverMusicMap или dbGet (синхронно через кэш)
+  const t = serverMusicMap.get(MP.trackId);
+  if(t){
+    const key = ((t.artist||'')+'|' +(t.album||''));
+    return key === tpAlbum;
+  }
+  // Для локальных треков — ищем в DOM панели по data-tid
   return !!document.querySelector(`#tpTrackList .tp-track[data-tid="${MP.trackId}"]`);
 }
 function syncAnimCovers(){
-  const sel='.tp-cover-wrap video.anim-cover';
-  const canPlay = !MP.audio.paused && _tpTrackInPanel();
-  document.querySelectorAll(sel).forEach(v=>{if(canPlay)v.play().catch(()=>{});else v.pause();});
+  const canPlay = !MP.audio.paused;
+  document.querySelectorAll('.tp-cover-wrap video.anim-cover').forEach(v=>{
+    if(canPlay) v.play().catch(()=>{}); else v.pause();
+  });
 }
 
 function mPause(){MP.audio.pause();setIcon(document.getElementById('mPlay'),'play');pauseAnimCovers();refreshPlayingCards(MP.trackId);}
@@ -1446,11 +1392,7 @@ async function fetchMusicLibrary() {
   if (musicLibCache && (now - musicLibCacheAt) < LIB_CACHE_TTL) return musicLibCache;
   if (!serverOnline) return musicLibCache || loadLibFromLS(LS_MUSIC_LIB_KEY) || [];
   try {
-    // Используем window.owntubeAuthHeader() через opts
-    const data = await fetchJsonWithRetry(`${SERVER_API}/library/music`, {
-      timeouts: [10000, 20000, 30000],
-      opts: { headers: window.owntubeAuthHeader() }
-    });
+    const data = await fetchJsonWithRetry(`${SERVER_API}/library/music`, { timeouts: [10000, 20000, 30000] });
     musicLibCache = (data.items && Array.isArray(data.items)) ? data.items : [];
     musicLibCacheAt = now;
     saveLibToLS(LS_MUSIC_LIB_KEY, musicLibCache);
@@ -1679,7 +1621,7 @@ function showTP(artist,album,tracks){
   let coverHtml;
   if (animCoversEnabled && albumAnim) {
     const acUrl = albumAnim.animCoverUrl.startsWith('/') ? (SERVER_API + albumAnim.animCoverUrl) : albumAnim.animCoverUrl;
-    coverHtml = animCoverHtml(acUrl, albumAnim.animCoverType, false);
+    coverHtml = animCoverHtml(acUrl, albumAnim.animCoverType, true);
   } else if (cu) {
     coverHtml = `<img class="track-panel-cover" src="${cu}" alt="">`;
   } else {
@@ -1699,6 +1641,13 @@ function showTP(artist,album,tracks){
   cw.style.cssText='border-radius:10px;overflow:hidden;';
   cw.innerHTML=coverHtml;
   inner.appendChild(cw);
+  const _tpVid = cw.querySelector('video.anim-cover');
+  if (_tpVid) {
+    // Запускаем как только браузер готов (autoplay может блокироваться до canplay)
+    const _startVid = () => _tpVid.play().catch(()=>{});
+    if (_tpVid.readyState >= 2) { _startVid(); }
+    else { _tpVid.addEventListener('canplay', _startVid, {once:true}); }
+  }
 
   const meta=document.createElement('div');meta.innerHTML=`<div class="tp-title">${album}</div><div class="tp-artist">${artist}</div>`;inner.appendChild(meta);
   const div=document.createElement('div');div.style.cssText='height:1px;background:var(--b);margin:10px 0';inner.appendChild(div);
@@ -1728,12 +1677,12 @@ function showTP(artist,album,tracks){
     list.appendChild(item);
   });
   inner.appendChild(list);
-  syncAnimCovers(); // вызываем после построения tpTrackList, чтобы _tpTrackInPanel() нашёл элементы
   tpVisible=true;p.classList.add('show');p.classList.remove('collapsed');
 }
 
 function hlTrack(id){document.querySelectorAll('#tpTrackList .tp-track').forEach(el=>el.classList.toggle('playing',el.dataset.tid===id));}
 function showAlbum(artist,album,tracks){
+  MS.mode='tracks';MS.artist=artist;MS.album=album;
   const sorted=[...tracks].sort((a,b)=>effectiveTrackNumber(a)-effectiveTrackNumber(b));
   showTP(artist,album,sorted);
 }
@@ -2022,7 +1971,7 @@ async function applyNormalization(audioUrl, track) {
     try {
       await fetch(SERVER_API + '/library/music/meta', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...window.owntubeAuthHeader() },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: track.id, normGain: g })
       });
       // Обновляем локальный кэш
@@ -2099,8 +2048,7 @@ async function ensureAnimCoversCache() {
   if (animCoversCache && (now - animCoversCacheAt) < ANIM_CACHE_TTL) return animCoversCache;
   if (!serverOnline) return animCoversCache || [];
   try {
-    // Используем window.owntubeAuthHeader() для авторизации
-    const res = await fetchWithTimeout(`${SERVER_API}/library/anim-covers`, { headers: window.owntubeAuthHeader() }, 8000);
+    const res = await fetchWithTimeout(`${SERVER_API}/library/anim-covers`, {}, 8000);
     const data = await res.json();
     animCoversCache = (data.items && Array.isArray(data.items)) ? data.items : [];
     animCoversCacheAt = now;

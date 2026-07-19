@@ -1,14 +1,14 @@
 // ══════════ СКРИПТ ДЛЯ НОВОЙ СКАЧИВАЛКИ В ХЕДЕРЕ ══════════
 
+// ⚠️ Тот же токен, что задан в backend/config.js (API_TOKEN / OWNTUBE_TOKEN)
+const API_TOKEN = 'ЗАМЕНИ_НА_СВОЙ_ДЛИННЫЙ_СЛУЧАЙНЫЙ_ТОКЕН';
+
 // === ПУТИ ПО УМОЛЧАНИЮ (изменено: audio → music) ===
-// Пути соответствуют LIBRARY_MUSIC_DIR / LIBRARY_VIDEO_DIR из backend/config.js —
-// именно эти папки сканирует /library/video и /library/music
 const DEFAULT_PATHS = {
   music: "F:\\biz.negr-off.twc",
   video: "F:\\new DlB"
 };
 
-// Качества по твоим требованиям
 function updateQualityOptions() {
   const typeSel = document.getElementById('dlTypeInline');
   const qualSel = document.getElementById('dlQualityInline');
@@ -35,18 +35,15 @@ function updateQualityOptions() {
 document.getElementById('dlTypeInline').addEventListener('change', updateQualityOptions);
 updateQualityOptions();
 
-// Само скачивание (обновлённая версия)
 async function startDownloadInline() {
   const url = document.getElementById('dlUrlInline').value.trim();
-  if (!url) { 
-    alert('Кинь ссылку, мудила'); 
-    return; 
+  if (!url) {
+    alert('Вставь ссылку');
+    return;
   }
 
-  // ========== ИЗМЕНЕНИЕ ТУТ ==========
   let type = document.getElementById('dlTypeInline').value;
   if (type === 'audio') type = 'music';
-  // ===================================
 
   const quality = document.getElementById('dlQualityInline').value;
   const numbering = document.getElementById('dlNumberingInline').checked;
@@ -65,21 +62,30 @@ async function startDownloadInline() {
   try {
     const res = await fetch('http://localhost:3001/download', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + API_TOKEN
+      },
       body: JSON.stringify({
-        url, 
-        type, 
-        quality, 
+        url,
+        type,
+        quality,
         numbering,
         thumbMode,
-        embedThumb: true, 
+        embedThumb: true,
         browser: 'firefox',
-        outputDir: DEFAULT_PATHS[type] || DEFAULT_PATHS.music   // защита
+        outputDir: DEFAULT_PATHS[type] || DEFAULT_PATHS.music
       })
     });
-    
+
+    if (res.status === 401) {
+      text.textContent = '❌ Не авторизовано';
+      alert('Неверный токен доступа — проверь API_TOKEN в downloader.js и backend/config.js');
+      return;
+    }
+
     const data = await res.json();
-    
+
     if (data.success) {
       fill.style.width = '100%';
       text.textContent = `✅ ${type.toUpperCase()} (${numbering ? 'с №' : 'без'})`;
@@ -88,7 +94,7 @@ async function startDownloadInline() {
       text.textContent = '❌ Ошибка';
       alert('Ошибка скачивания: ' + (data.error || data.logs?.join('\n') || 'неизвестно'));
     }
-  } catch(e) {
+  } catch (e) {
     text.textContent = '❌ Нет соединения';
     alert('Сервер не отвечает. Запусти server.js заново');
   } finally {
