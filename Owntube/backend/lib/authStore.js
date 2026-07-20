@@ -38,4 +38,40 @@ function getJwtSecret() {
   return secret;
 }
 
-module.exports = { loadUsers, saveUsers, getJwtSecret };
+// ══════════════════════════════════════════════════════════════
+// ДОБАВЛЕНО: helpers для пользователей и лайков-по-аккаунту.
+// Причина: раньше нигде не было единого способа найти пользователя
+// по логину (регистр буквенный не нормализовался) и не было вообще
+// никакого хранилища лайков на сервере — "нравится" жили только в
+// localStorage/IndexedDB браузера (см. frontend/js/app.js,
+// TRACK_LIKES_KEY). Из-за этого лайки терялись при заходе с другого
+// браузера/устройства под тем же аккаунтом. Теперь лайки хранятся
+// прямо в записи пользователя в users.json — переживают смену
+// браузера, привязаны к логину, а не к конкретному фронтенду.
+// ══════════════════════════════════════════════════════════════
+function normUsername(u) {
+  return String(u || '').trim().toLowerCase();
+}
+
+function getLikes(username) {
+  const users = loadUsers();
+  const u = users[normUsername(username)];
+  return (u && u.likes) ? u.likes : { video: {}, music: {} };
+}
+
+// state: 1 (нравится), -1 (не нравится), 0 (снять отметку)
+function setLike(username, type, id, state) {
+  if (type !== 'video' && type !== 'music') return null;
+  const users = loadUsers();
+  const key = normUsername(username);
+  const u = users[key];
+  if (!u) return null;
+  if (!u.likes) u.likes = { video: {}, music: {} };
+  if (!u.likes[type]) u.likes[type] = {};
+  if (!state) delete u.likes[type][id];
+  else u.likes[type][id] = state;
+  saveUsers(users);
+  return u.likes;
+}
+
+module.exports = { loadUsers, saveUsers, getJwtSecret, normUsername, getLikes, setLike };

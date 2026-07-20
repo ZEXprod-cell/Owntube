@@ -1,7 +1,15 @@
 // ══════════ СКРИПТ ДЛЯ НОВОЙ СКАЧИВАЛКИ В ХЕДЕРЕ ══════════
 
-// ⚠️ ИСПРАВЛЕНО: убран захардкоженный API_TOKEN = 'ЗАМЕНИ_НА_СВОЙ...'
-// Теперь используется JWT-токен из auth-gate.js через window.owntubeAuthHeader().
+// ИСПРАВЛЕНИЕ БАГА: раньше здесь был захардкоженный API_TOKEN со значением
+// буквально "ЗАМЕНИ_НА_СВОЙ_ДЛИННЫЙ_СЛУЧАЙНЫЙ_ТОКЕН" (незаменённая заглушка),
+// который отправлялся как Authorization: Bearer <заглушка>. Роут /download
+// на бэкенде защищён настоящим JWT (backend/middleware/auth.js), поэтому
+// такой токен НИКОГДА не проходил проверку — скачивание из хедера всегда
+// падало с 401, даже если вы были залогинены. Сама index.html над этим
+// скриптом уже содержала комментарий "использует window.owntubeAuthHeader" —
+// то есть так и было задумано, просто этот файл не был обновлён при переходе
+// с одного статического токена на систему логина/JWT. Теперь используем
+// настоящий токен из аккаунта, как и остальные защищённые запросы в проекте.
 
 // === ПУТИ ПО УМОЛЧАНИЮ (изменено: audio → music) ===
 const DEFAULT_PATHS = {
@@ -64,7 +72,7 @@ async function startDownloadInline() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...window.owntubeAuthHeader()
+        ...(window.owntubeAuthHeader ? window.owntubeAuthHeader() : {})
       },
       body: JSON.stringify({
         url,
@@ -80,7 +88,7 @@ async function startDownloadInline() {
 
     if (res.status === 401) {
       text.textContent = '❌ Не авторизовано';
-      alert('Сессия истекла — войди заново');
+      alert('Сессия истекла или вы не вошли в аккаунт. Войдите заново.');
       if (window.owntubeLogout) window.owntubeLogout();
       return;
     }

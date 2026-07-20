@@ -451,6 +451,8 @@ async function renderPage(){
           it.dateAdded = it.mtime || Date.now();
           serverVideoMap.set(id, it);
           if (raw.animCoverUrl) { it.animCoverUrl = SERVER_API + raw.animCoverUrl; it.animCoverType = raw.animCoverType; }
+          // ДОБАВЛЕНО: обложка видео с диска (см. VIDEO_COVERS_DIR / "vid cover" в backend)
+          if (raw.coverUrl) { it.coverUrl = SERVER_API + raw.coverUrl; }
           list.unshift(it);
         });
       } catch(e){ console.warn('Server video failed', e); }
@@ -482,7 +484,7 @@ async function renderPage(){
     const hist=JSON.parse(localStorage.getItem('ot_hist')||'[]');
     for(const v of list){
       const card=document.createElement('div');card.className='vc'+(v.vertical?' vert':'');card.dataset.id=v.id;card.onclick=()=>openVid(v.id);
-      const thumb=TC.get(v.id)||v.thumbnail||defThumb(v.name);
+      const thumb=TC.get(v.id)||v.thumbnail||v.coverUrl||defThumb(v.name);
       const badge=v.isServer ? `<div class="ct-badge ok">● сервер</div>` : (VS.has(v.id)?`<div class="ct-badge ok">● подключено</div>`:'');
       const ri=hist.includes(v.id)?`<div class="replay-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.67"/></svg></div>`:'';
       card.innerHTML=`<div class="ct${v.vertical?' vert':''}">${animCoversEnabled&&v.animCoverUrl?animCoverHtml(v.animCoverUrl.startsWith('/')?SERVER_API+v.animCoverUrl:v.animCoverUrl,v.animCoverType):`<img src="${thumb}" alt="${v.name}" loading="lazy" id="thumb-${v.id}">`}<div class="cd">${fmtD(v.duration)}</div>${badge}${ri}</div><div class="ci"><div class="cit">${v.name}</div><div class="cm">${fmtSz(v.size)} • ${fmtDt(v.dateAdded)}</div></div>`;
@@ -608,7 +610,7 @@ function loadCmts(id){
 }
 function addCmt(){
   const inp=document.getElementById('cmtIn');const text=inp.value.trim();if(!text||!curVidId)return;
-  const user=localStorage.getItem('ot_user')||'Аноним';
+  const user=localStorage.getItem('owntube_username')||localStorage.getItem('ot_user')||'Аноним';
   const cmts=JSON.parse(localStorage.getItem('ot_cmt_'+curVidId)||'[]');cmts.push({user,text,date:Date.now()});
   localStorage.setItem('ot_cmt_'+curVidId,JSON.stringify(cmts));inp.value='';loadCmts(curVidId);
 }
@@ -1127,12 +1129,35 @@ function updateBar(track){
 }
 
 // ─── ЛАЙКИ ТРЕКОВ ────────────────────────────────────────────
+// ДОБАВЛЕНО: лайки теперь привязаны к аккаунту (backend /library/likes),
+// а не только к браузеру. Раньше состояние лайка жило исключительно в
+// localStorage/IndexedDB — при заходе с другого браузера или устройства
+// под тем же логином лайки "пропадали". localStorage здесь оставлен как
+// оффлайн-кэш (чтобы UI мгновенно откликался и работал без сервера),
+// но источником истины при наличии сервера и логина является аккаунт.
 const TRACK_LIKES_KEY='ot_track_likes';
 function loadTrackLikes(){try{return JSON.parse(localStorage.getItem(TRACK_LIKES_KEY)||'{}');}catch(e){return{};}}
 function saveTrackLikes(o){try{localStorage.setItem(TRACK_LIKES_KEY,JSON.stringify(o));}catch(e){}}
 let trackLikesCache=loadTrackLikes();
 
 function getTrackLikeStateSync(id){return trackLikesCache[id]||0;}
+
+// Подтягивает лайки из аккаунта на сервере и подмешивает их в локальный
+// кэш (аккаунт — источник истины, если сервер доступен и есть логин).
+// Вызывается один раз при старте (см. init()).
+async function hydrateLikesFromAccount(){
+ if(!serverOnline)return;
+ try{
+ const headers=window.owntubeAuthHeader?window.owntubeAuthHeader():{};
+ if(!headers.Authorization)return;
+ const res=await fetch(`${SERVER_API}/library/likes`,{headers});
+ if(!res.ok)return;
+ const data=await res.json();
+ const music=(data&&data.likes&&data.likes.music)||{};
+ for(const id in music){trackLikesCache[id]=music[id];}
+ saveTrackLikes(trackLikesCache);
+ }catch(e){console.warn('Не удалось загрузить лайки аккаунта:',e.message);}
+}
 
 async function getTrackLikeState(track){
  if(!track)return 0;
@@ -1148,6 +1173,18 @@ async function setTrackLikeState(track,state){
  if(!track.isServer){
  try{const rec=await dbGet('tracks',track.id);if(rec){rec.likeState=state;await dbPut('tracks',rec);}}catch(e){}
  }
+ // Синхронизация с аккаунтом на сервере — лайки привязаны к аккаунту,
+ // а не к конкретному браузеру.
+ try{
+ const headers=window.owntubeAuthHeader?window.owntubeAuthHeader():{};
+ if(serverOnline&&headers.Authorization){
+ await fetch(`${SERVER_API}/library/likes`,{
+ method:'POST',
+ headers:{'Content-Type':'application/json',...headers},
+ body:JSON.stringify({type:'music',id:track.id,state})
+ });
+ }
+ }catch(e){console.warn('Не удалось сохранить лайк на сервере:',e.message);}
 }
 function refreshTrackCardLikeUI(id){
  document.querySelectorAll(`.mc[data-id="${id}"] .mc-like-btn`).forEach(btn=>{
@@ -2184,23 +2221,55 @@ async function preloadAnimCovers() {
 
 // ── Init ──
  
+// ДОБАВЛЕНО: тихий обработчик "неважных" ошибок — раньше любая необработанная
+// ошибка (в т.ч. случайная, во время быстрой навигации между вкладками/
+// страницами) либо молча терялась в консоли, либо (если попадала в init())
+// сносила весь интерфейс на экран "Ошибка". Теперь такие ошибки просто
+// логируются и не мешают работе сайта.
+window.addEventListener('error', e => console.warn('[неважная ошибка]', e.message));
+window.addEventListener('unhandledrejection', e => console.warn('[неважная ошибка promise]', e.reason && e.reason.message || e.reason));
+
 async function init(){
+  // openDB() — единственный по-настоящему фатальный шаг: без локальной базы
+  // сайт не может работать вообще, поэтому его ошибка ниже всё ещё показывает
+  // экран "Ошибка" с кнопкой сброса базы.
   await openDB();
-  if(!localStorage.getItem('ot_user')){const n=prompt('Как вас зовут?','Аноним')||'Аноним';localStorage.setItem('ot_user',n);}
+
+  if(!localStorage.getItem('ot_user')){
+    // Если уже вошли в аккаунт — используем имя аккаунта вместо анонимного
+    // prompt() (комментарии теперь тоже привязаны к аккаунту, а не к
+    // случайному имени, введённому один раз в браузере).
+    const accountName = localStorage.getItem('owntube_username');
+    const n = accountName || prompt('Как вас зовут?','Аноним') || 'Аноним';
+    localStorage.setItem('ot_user',n);
+  }
   dynCover=localStorage.getItem('ot_dyn_cover')==='1';
-  initEvents();initMusicCtrl();initSearch();initTP();initPlayerControls();
-  await checkServerStatus();
+
+  try{ initEvents();initMusicCtrl();initSearch();initTP();initPlayerControls(); }
+  catch(e){ console.warn('[init] сбой инициализации UI-обработчиков (не критично):', e); }
+
+  try{ await checkServerStatus(); }
+  catch(e){ console.warn('[init] сбой проверки статуса сервера (не критично):', e); }
+
+  try{ await hydrateLikesFromAccount(); } // ДОБАВЛЕНО: лайки из аккаунта, не только из браузера
+  catch(e){ console.warn('[init] сбой загрузки лайков аккаунта (не критично):', e); }
+
   setInterval(checkServerStatus, 20000);
   setInterval(()=>{
     if(curPage==='music'&&MS.mode==='artist_page'&&MS.artist){
-      buildAllTracks().then(all=>renderArtistPage(MS.artist,all));
+      buildAllTracks().then(all=>renderArtistPage(MS.artist,all)).catch(e=>console.warn('[artist_page]',e));
     }
   }, BANNER_ROTATE_HOURS*3600*1000);
-  updateNotice();await renderPage();
+
+  try{ updateNotice(); await renderPage(); }
+  catch(e){ console.warn('[init] сбой первого рендера страницы (не критично):', e); }
+
   (async()=>{
-    const restored=await restoreHandle();
-    await restoreMusic();
-    if(restored){await renderPage();setTimeout(()=>regenMissing(),2000);}
+    try{
+      const restored=await restoreHandle();
+      await restoreMusic();
+      if(restored){await renderPage();setTimeout(()=>regenMissing(),2000);}
+    }catch(e){ console.warn('[init] сбой восстановления локальных папок (не критично):', e); }
   })();
   console.log('Owntube v28 + Server integration');
 }

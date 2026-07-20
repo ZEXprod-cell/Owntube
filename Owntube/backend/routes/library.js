@@ -11,25 +11,17 @@ const {
   MUSIC_EXTENSIONS,
 } = require('../config');
 
-// === ПУТИ — РЕШАЕМ ОДИН РАЗ И РАНО ===
-const VIDEO_DIR = path.resolve(LIBRARY_VIDEO_DIR);
-const MUSIC_DIR = path.resolve(LIBRARY_MUSIC_DIR);
-let ANIM_DIR = null;
-try { ANIM_DIR = require('../config').ANIM_DIR; } catch (e) {}
-if (!ANIM_DIR) ANIM_DIR = 'F:/(8 фелиал АДА)sLOW/anim';
-ANIM_DIR = path.resolve(ANIM_DIR);
-
-console.log('[config] VIDEO_DIR =', VIDEO_DIR);
-console.log('[config] MUSIC_DIR =', MUSIC_DIR);
-console.log('[config] ANIM_DIR  =', ANIM_DIR);
-
-// === АНИМИРОВАННЫЕ ОБЛОЖКИ ===
-const ANIM_EXTENSIONS = ['.gif', '.webm'];
+// ═══ АНИМИРОВАННЫЕ ОБЛОЖКИ ═══
+const ANIM_DIR = (() => {
+  try { return require('../config').ANIM_DIR; } catch(e) { return null; }
+})() || String.raw`F:\(8 фелиал АДА)\sLOW\anim`;
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
 const router = express.Router();
 
-// === КЭШИ ===
+// ============================================================
+// ДИСК-КЭШИ (переживают перезапуск сервера)
+// ============================================================
 const CACHE_DIR = path.join(__dirname, '..', '.cache');
 const COVERS_DIR = path.join(CACHE_DIR, 'covers');
 const DIMS_CACHE_PATH = path.join(CACHE_DIR, 'dims_cache.json');
@@ -43,12 +35,18 @@ for (const dir of [CACHE_DIR, COVERS_DIR]) {
 function loadJsonSafe(filePath, fallback) {
   try {
     if (fs.existsSync(filePath)) return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  } catch (e) {}
+  } catch (e) {
+    console.warn('[cache] не удалось прочитать', filePath, e.message);
+  }
   return fallback;
 }
 
 function saveJsonSync(filePath, data) {
-  try { fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8'); } catch (e) {}
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('[cache] ошибка записи', filePath, e.message);
+  }
 }
 
 function makeDebouncedSaver(filePath, getData, delayMs = 3000) {
@@ -60,25 +58,109 @@ function makeDebouncedSaver(filePath, getData, delayMs = 3000) {
       timer = null;
       if (!dirty) return;
       dirty = false;
-      fs.writeFile(filePath, JSON.stringify(getData()), (err) => {});
+      fs.writeFile(filePath, JSON.stringify(getData()), (err) => {
+        if (err) console.warn('[cache] ошибка записи', filePath, err.message);
+      });
     }, delayMs);
   };
 }
 
+// ════════════════════════════════════════════════════════════
+// АНИМ-ОБЛОЖКИ: сканирование, нормализация, мэтчинг
+// ════════════════════════════════════════════════════════════
+const ANIM_EXTENSIONS = ['.gif', '.webm'];
+
+// Нормализация: нижний регистр, убрать спецсимволы, сжать пробелы
 function norm(s) {
   if (!s) return '';
-  return s.toLowerCase().replace(/[^a-z0-9а-яё\u0400-\u04FF]/g, ' ').replace(/\s+/g, ' ').trim();
+  return s.toLowerCase()
+    .replace(/[^a-z0-9а-яё\u0400-\u04FF]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-// === АНИМ-ОБЛОЖКИ (асинхронный скан) ===
-let animMap = new Map();
+// ───────────────────── НОВЫЙ АСИНХРОННЫЙ СКАН ─────────────────────
+let animMap = new Map(); // всегда актуальный, готовый к чтению снапшот
 const ANIM_CACHE_TTL = 60000;
 
+// Асинхронный скан — НЕ блокирует event loop. Работает только в фоне,
+// никогда не вызывается изнутри обработки запроса.
 async function refreshAnimMapAsync() {
   const next = new Map();
+
   if (!fs.existsSync(ANIM_DIR)) {
-    console.warn('[anim] папка НЕ НАЙДЕНА:', ANIM_DIR);
+    console.warn('[anim] папка не найдена:', ANIM_DIR);
     animMap = next;
+    return;
+  }
+
+  try {
+    async function walk(dir) {
+      let entries;
+      try {
+        entries = await fs.promises.readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        const abs = path.join(dir, e.name);
+        if (e.isDirectory()) { await walk(abs); continue; }
+        const ext = path.extname(e.name).toLowerCase();
+        if (!ANIM_EXTENSIONS.includes(ext)) continue;
+        const nameNorm = norm(path.basename(e.name, ext));
+        const type = ext === '.gif' ? 'image/gif' : 'video/webm';
+        const relFromAnim = path.relative(ANIM_DIR, abs).replace(/\\/g, '/');
+        const existing = next.get(nameNorm);
+        if (!existing || ext === '.webm') {
+          next.set(nameNorm, {
+            filename: e.name,
+            relPath: relFromAnim,
+            type,
+            streamUrl: '/stream/anim/' + encodeURIComponent(relFromAnim).replace(/%2F/g, '/'),
+          });
+        }
+      }
+    }
+    await walk(ANIM_DIR);
+    animMap = next;
+    console.log(`[anim] найдено ${animMap.size} аним. обложек в ${ANIM_DIR}`);
+  } catch (err) {
+    console.error('[anim] ошибка сканирования:', err.message);
+  }
+}
+
+// Синхронный геттер — просто отдаёт текущий снапшот, ничего не читает с диска.
+function scanAnimDir() {
+  return animMap;
+}
+
+// Фоновое обновление: сразу при старте (не блокируя запуск сервера — не awaitим)
+// и затем каждые ANIM_CACHE_TTL.
+refreshAnimMapAsync();
+setInterval(refreshAnimMapAsync, ANIM_CACHE_TTL);
+// ──────────────────── КОНЕЦ НОВОГО БЛОКА ─────────────────────
+
+// ════════════════════════════════════════════════════════════
+// ДОБАВЛЕНО: СТАТИЧНЫЕ ОБЛОЖКИ ВИДЕО (jpg/png/webp)
+// Раньше у видео вообще не было обложек с диска — фронтенд (см.
+// showEnd()/renderRec() в app.js) уже умел показывать v.coverUrl
+// для серверных видео, но бэкенд никогда его не отдавал. Работает
+// по тому же принципу, что и ANIM_DIR выше: имя файла-картинки
+// сопоставляется с именем видео через norm().
+// ════════════════════════════════════════════════════════════
+const VIDEO_COVERS_DIR = (() => {
+  try { return require('../config').VIDEO_COVERS_DIR; } catch (e) { return null; }
+})() || String.raw`F:\(8 фелиал АДА)\sLOW\vid cover`;
+
+const VIDEO_COVER_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
+let videoCoverMap = new Map();
+const VIDEO_COVER_CACHE_TTL = 60000;
+
+async function refreshVideoCoverMapAsync() {
+  const next = new Map();
+  if (!fs.existsSync(VIDEO_COVERS_DIR)) {
+    console.warn('[обложки видео] папка не найдена:', VIDEO_COVERS_DIR);
+    videoCoverMap = next;
     return;
   }
   try {
@@ -89,75 +171,237 @@ async function refreshAnimMapAsync() {
         const abs = path.join(dir, e.name);
         if (e.isDirectory()) { await walk(abs); continue; }
         const ext = path.extname(e.name).toLowerCase();
-        if (!ANIM_EXTENSIONS.includes(ext)) continue;
+        if (!VIDEO_COVER_EXTENSIONS.includes(ext)) continue;
         const nameNorm = norm(path.basename(e.name, ext));
-        const type = ext === '.gif' ? 'image/gif' : 'video/webm';
-        const rel = path.relative(ANIM_DIR, abs).replace(/\\/g, '/');
-        if (!next.has(nameNorm) || ext === '.webm') {
-          next.set(nameNorm, {
-            filename: e.name,
-            relPath: rel,
-            type,
-            streamUrl: '/stream/anim/' + encodeURIComponent(rel).replace(/%2F/g, '/'),
-          });
-        }
+        const relFromCovers = path.relative(VIDEO_COVERS_DIR, abs).replace(/\\/g, '/');
+        next.set(nameNorm, {
+          filename: e.name,
+          relPath: relFromCovers,
+          coverUrl: '/cover/video/' + encodeURIComponent(relFromCovers).replace(/%2F/g, '/'),
+        });
       }
     }
-    await walk(ANIM_DIR);
-    animMap = next;
-    console.log(`[anim] найдено ${animMap.size} аним-обложек в ${ANIM_DIR}`);
+    await walk(VIDEO_COVERS_DIR);
+    videoCoverMap = next;
+    console.log(`[обложки видео] найдено ${videoCoverMap.size} обложек в ${VIDEO_COVERS_DIR}`);
   } catch (err) {
-    console.error('[anim] ошибка сканирования:', err.message);
+    console.error('[обложки видео] ошибка сканирования:', err.message);
   }
 }
 
-function scanAnimDir() { return animMap; }
+function findCoverForVideo(name) {
+  if (!name) return null;
+  return videoCoverMap.get(norm(name)) || null;
+}
 
-refreshAnimMapAsync();
-setInterval(refreshAnimMapAsync, ANIM_CACHE_TTL);
+refreshVideoCoverMapAsync();
+setInterval(refreshVideoCoverMapAsync, VIDEO_COVER_CACHE_TTL);
+// ──────────────────── КОНЕЦ БЛОКА ОБЛОЖЕК ВИДЕО ─────────────────────
 
+// Найти аним-обложку для музыкального трека
 function findAnimCoverForTrack(tags, name) {
   const map = scanAnimDir();
-  if (tags && tags.album) { const h = map.get(norm(tags.album)); if (h) return h; }
-  if (tags && tags.title) { const h = map.get(norm(tags.title)); if (h) return h; }
-  if (name) { const h = map.get(norm(name)); if (h) return h; }
+  if (tags && tags.album) {
+    const hit = map.get(norm(tags.album));
+    if (hit) return hit;
+  }
+  if (tags && tags.title) {
+    const hit = map.get(norm(tags.title));
+    if (hit) return hit;
+  }
+  if (name) {
+    const hit = map.get(norm(name));
+    if (hit) return hit;
+  }
   return null;
 }
 
 function findAnimCoverForVideo(name) {
+  const map = scanAnimDir();
   if (!name) return null;
-  return scanAnimDir().get(norm(name)) || null;
+  return map.get(norm(name)) || null;
 }
 
-// === ВЕРТИКАЛЬНОЕ ВИДЕО ===
-const dimsCache = loadJsonSafe(DIMS_CACHE_PATH, {});
+// ═══ ЛОГИРОВАНИЕ ПРИВЯЗКИ + ДИФФ ПРИ ПЕРЕЗАПУСКЕ ═══
+// Структура кэша: { [normName]: { filename, type, albums:[], artists:[], trackCount, matchTypes:[] } }
+let prevMatchesCache = loadJsonSafe(ANIM_MATCHES_CACHE_PATH, {});
+
+function logAnimMatches(items) {
+  const map = scanAnimDir();
+  const newCache = {};
+
+  if (!map.size) {
+    console.log('[anim] папка пуста или не найдена — аним. обложек нет');
+    return;
+  }
+
+  // Строим текущие привязки
+  for (const [normName, info] of map) {
+    const matches = items.filter(t =>
+      norm(t.album) === normName || norm(t.title) === normName || norm(t.name) === normName
+    );
+    const matchedAlbums = [...new Set(matches.map(t => t.album).filter(Boolean))];
+    const matchedArtists = [...new Set(matches.map(t => t.artist).filter(Boolean))];
+    const matchTypes = [];
+    if (matches.some(t => norm(t.album) === normName)) matchTypes.push('album');
+    if (matches.some(t => norm(t.title) === normName)) matchTypes.push('title');
+    if (matches.some(t => norm(t.name) === normName && norm(t.album) !== normName && norm(t.title) !== normName)) matchTypes.push('filename');
+
+    newCache[normName] = {
+      filename: info.filename,
+      type: info.type,
+      albums: matchedAlbums,
+      artists: matchedArtists,
+      trackCount: matches.length,
+      matchTypes,
+    };
+  }
+
+  // ═══ ДИФФ: что изменилось с предыдущего запуска ═══
+  const prev = prevMatchesCache;
+  const added = [];      // новые файлы, которых не было
+  const removed = [];    // файлы, которые исчезли
+  const changed = [];    // файлы, привязка которых изменилась
+  const unchanged = [];  // без изменений
+
+  for (const [normName, cur] of Object.entries(newCache)) {
+    if (!prev[normName]) {
+      added.push(cur);
+    } else {
+      const p = prev[normName];
+      if (p.trackCount !== cur.trackCount ||
+          JSON.stringify(p.albums) !== JSON.stringify(cur.albums) ||
+          JSON.stringify(p.matchTypes) !== JSON.stringify(cur.matchTypes) ||
+          p.filename !== cur.filename) {
+        changed.push({ cur, prev: p });
+      } else {
+        unchanged.push(cur);
+      }
+    }
+  }
+  for (const [normName, p] of Object.entries(prev)) {
+    if (!newCache[normName]) {
+      removed.push(p);
+    }
+  }
+
+  // ═══ ВЫВОД В КОНСОЛЬ ═══
+  console.log('');
+  console.log('╔══════════════════════════════════════════════════════════════╗');
+  console.log('║            АНИМИРОВАННЫЕ ОБЛОЖКИ — ПРИВЯЗКА                ║');
+  console.log('╠══════════════════════════════════════════════════════════════╣');
+
+  for (const c of added) {
+    const label = c.matchTypes.includes('album') ? 'альбом' : c.matchTypes.includes('title') ? 'трек' : 'файл';
+    const info = c.albums.length ? ` → ${label}: ${c.albums.join(', ')}` : ' → нет совпадений';
+    console.log(`║ 🆕 ${c.filename}${info}`);
+    if (c.trackCount > 0) {
+      const arts = c.artists.slice(0, 3).join(', ');
+      console.log(`║    (${c.trackCount} треков${arts ? ', ' + arts : ''})`);
+    }
+  }
+
+  for (const { cur, prev: p } of changed) {
+    const prevLabel = p.matchTypes.includes('album') ? 'альбом' : p.matchTypes.includes('title') ? 'трек' : 'файл';
+    const curLabel = cur.matchTypes.includes('album') ? 'альбом' : cur.matchTypes.includes('title') ? 'трек' : 'файл';
+    console.log(`║ 🔄 ${cur.filename} — ИЗМЕНЕНИЕ:`);
+    if (p.filename !== cur.filename) {
+      console.log(`║    файл: ${p.filename} → ${cur.filename}`);
+    }
+    if (p.trackCount !== cur.trackCount || JSON.stringify(p.albums) !== JSON.stringify(cur.albums)) {
+      const prevInfo = p.trackCount > 0 ? `${prevLabel}: ${p.albums.join(', ')} (${p.trackCount} тр.)` : 'нет совпадений';
+      const curInfo = cur.trackCount > 0 ? `${curLabel}: ${cur.albums.join(', ')} (${cur.trackCount} тр.)` : 'нет совпадений';
+      console.log(`║    было: ${prevInfo}`);
+      console.log(`║    стало: ${curInfo}`);
+    }
+  }
+
+  for (const r of removed) {
+    console.log(`║ ❌ ${r.filename} — ФАЙЛ УДАЛЁН (было: ${r.trackCount} треков)`);
+  }
+
+  for (const c of unchanged) {
+    if (c.trackCount > 0) {
+      const label = c.matchTypes.includes('album') ? 'альбом' : c.matchTypes.includes('title') ? 'трек' : 'файл';
+      const arts = c.artists.slice(0, 3).join(', ');
+      console.log(`║ ✅ ${c.filename} → ${label}: ${c.albums.join(', ')} (${c.trackCount} тр.${arts ? ', ' + arts : ''})`);
+    } else {
+      console.log(`║ ⚠  ${c.filename} — нет совпадений`);
+    }
+  }
+
+  const totalMatched = Object.values(newCache).filter(c => c.trackCount > 0).length;
+  console.log('╠══════════════════════════════════════════════════════════════╣');
+  if (added.length || removed.length || changed.length) {
+    console.log(`║ Сводка: 🆕${added.length} 🔄${changed.length} ❌${removed.length} ✅${unchanged.length} без изменений`);
+  }
+  console.log(`║ Итого: ${totalMatched}/${map.size} файлов привязаны к трекам`);
+  console.log('╚══════════════════════════════════════════════════════════════╝');
+  console.log('');
+
+  // Сохраняем текущее состояние для следующего запуска
+  prevMatchesCache = newCache;
+  saveJsonSync(ANIM_MATCHES_CACHE_PATH, newCache);
+}
+
+// ---------------- Ориентация видео (ffprobe) ----------------
+let dimsCache = loadJsonSafe(DIMS_CACHE_PATH, {});
+const markDimsDirty = makeDebouncedSaver(DIMS_CACHE_PATH, () => dimsCache);
+
+function probeDimensions(absPath) {
+  return new Promise((resolve) => {
+    execFile('ffprobe', [
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-show_entries', 'stream=width,height',
+      '-of', 'csv=p=0',
+      absPath
+    ], { timeout: 15000 }, (err, stdout) => {
+      if (err || !stdout) return resolve(null);
+      const [w, h] = stdout.trim().split(',').map(Number);
+      if (!w || !h) return resolve(null);
+      resolve({ width: w, height: h, vertical: h > w });
+    });
+  });
+}
+
+const probeQueue = [];
+const probeInFlight = new Set();
+let probeRunning = false;
+
+function enqueueProbe(relativePath, absPath, size, mtime) {
+  if (probeInFlight.has(relativePath)) return;
+  probeInFlight.add(relativePath);
+  probeQueue.push({ relativePath, absPath, size, mtime });
+  if (!probeRunning) runProbeQueue();
+}
+
+async function runProbeQueue() {
+  probeRunning = true;
+  const CONC = 4;
+  while (probeQueue.length) {
+    const batch = probeQueue.splice(0, CONC);
+    await Promise.all(batch.map(async ({ relativePath, absPath, size, mtime }) => {
+      const dims = await probeDimensions(absPath);
+      dimsCache[relativePath] = { size, mtime, vertical: dims ? dims.vertical : false };
+      probeInFlight.delete(relativePath);
+      markDimsDirty();
+    }));
+  }
+  probeRunning = false;
+}
+
 function getVerticalFast(relativePath, absPath, size, mtime) {
-  const key = relativePath;
-  const cached = dimsCache[key];
-  if (cached && cached.size === size && cached.mtime === mtime) return !!cached.vertical;
-  return false;
+  const cached = dimsCache[relativePath];
+  if (cached && cached.size === size && cached.mtime === mtime) return cached.vertical;
+  enqueueProbe(relativePath, absPath, size, mtime);
+  return cached ? cached.vertical : false;
 }
 
-// === ОБХОД ПАПОК ===
+// ---------------- Обход директории ----------------
 async function walkLibrary(dir, extensions, base = '') {
-  if (!fs.existsSync(dir)) {
-    console.log('[library] НЕ НАЙДЕНА:', dir);
-    return [];
-  }
-  let entries;
-  try {
-    entries = await fs.promises.readdir(dir, { withFileTypes: true });
-  } catch (e) {
-    console.log('[library] ОШИБКА чтения:', dir, e.message);
-    return [];
-  }
-  const files = entries.filter(e => !e.isDirectory());
-  const matched = files.filter(e => extensions.includes(path.extname(e.name).toLowerCase()));
-  console.log(`[library] ${dir} — всего файлов: ${files.length}, подошло: ${matched.length}`);
-  if (files.length > 0 && matched.length === 0) {
-    console.log('[library] Файлы есть, но НИ ОДИН не прошёл по расширениям. Примеры:', files.slice(0, 5).map(e => e.name));
-  }
-
+  if (!fs.existsSync(dir)) return [];
+  const entries = await fs.promises.readdir(dir, { withFileTypes: true });
   const results = await Promise.all(
     entries.map(async (e) => {
       const rel = path.join(base, e.name);
@@ -179,22 +423,25 @@ async function walkLibrary(dir, extensions, base = '') {
   return results.flat();
 }
 
-// === ВИДЕО ===
+// ============================================================
+// ВИДЕО
+// ============================================================
 router.get('/library/video', async (req, res) => {
   try {
-    const items = await walkLibrary(VIDEO_DIR, VIDEO_EXTENSIONS);
-    console.log(`[library/video] итого: ${items.length}`);
+    const items = await walkLibrary(LIBRARY_VIDEO_DIR, VIDEO_EXTENSIONS);
     const withUrls = items.map(it => {
-      const absPath = path.join(VIDEO_DIR, it.relativePath);
+      const absPath = path.join(LIBRARY_VIDEO_DIR, it.relativePath);
       const vertical = getVerticalFast(it.relativePath, absPath, it.size, it.mtime);
       const anim = findAnimCoverForVideo(it.name);
+      const cover = findCoverForVideo(it.name);
       return {
-        id: it.relativePath,
         ...it,
         vertical,
         streamUrl: `/stream/video/${encodeURIComponent(it.relativePath).replace(/%2F/g, '/')}`,
         animCoverUrl: anim ? anim.streamUrl : null,
         animCoverType: anim ? anim.type : null,
+        // ДОБАВЛЕНО: см. блок "СТАТИЧНЫЕ ОБЛОЖКИ ВИДЕО" выше.
+        coverUrl: cover ? cover.coverUrl : null,
       };
     });
     res.setHeader('Cache-Control', 'no-cache');
@@ -205,7 +452,9 @@ router.get('/library/video', async (req, res) => {
   }
 });
 
-// === МУЗЫКА ===
+// ============================================================
+// МУЗЫКА — теги + обложки + аним-обложки
+// ============================================================
 const audioTagsCache = new Map();
 
 function coverCacheBase(relativePath) {
@@ -268,7 +517,7 @@ function snapshotsEqual(a, b) {
 }
 
 async function buildMusicLibrary() {
-  const items = await walkLibrary(MUSIC_DIR, MUSIC_EXTENSIONS);
+  const items = await walkLibrary(LIBRARY_MUSIC_DIR, MUSIC_EXTENSIONS);
   const concurrency = 8;
   const results = [];
 
@@ -276,16 +525,17 @@ async function buildMusicLibrary() {
     const chunk = items.slice(i, i + concurrency);
     const chunkResults = await Promise.all(
       chunk.map(async (it) => {
-        const absPath = path.join(MUSIC_DIR, it.relativePath);
+        const absPath = path.join(LIBRARY_MUSIC_DIR, it.relativePath);
         const tags = await readAudioTags(absPath, it.relativePath, it.size, it.mtime);
         const coverPath = await extractAndCacheCover(absPath, it.relativePath);
         const anim = findAnimCoverForTrack(tags, it.name);
         return {
-          id: it.relativePath,
           ...it,
           ...tags,
           hasCover: !!coverPath,
-          coverUrl: coverPath ? `/cover/music/${encodeURIComponent(it.relativePath).replace(/%2F/g, '/')}` : null,
+          coverUrl: coverPath
+            ? `/cover/music/${encodeURIComponent(it.relativePath).replace(/%2F/g, '/')}`
+            : null,
           streamUrl: `/stream/music/${encodeURIComponent(it.relativePath).replace(/%2F/g, '/')}`,
           animCoverUrl: anim ? anim.streamUrl : null,
           animCoverType: anim ? anim.type : null,
@@ -308,6 +558,7 @@ async function refreshMusicLibrary() {
     musicSnapshot = snapshot;
     markMusicCacheDirty();
     console.log(`[music] библиотека обновлена: ${items.length} треков`);
+    logAnimMatches(items);
   } catch (e) {
     console.warn('[music] ошибка обновления библиотеки:', e.message);
   } finally {
@@ -317,7 +568,7 @@ async function refreshMusicLibrary() {
 
 async function hasLibraryChanged() {
   try {
-    const items = await walkLibrary(MUSIC_DIR, MUSIC_EXTENSIONS);
+    const items = await walkLibrary(LIBRARY_MUSIC_DIR, MUSIC_EXTENSIONS);
     const snap = computeSnapshot(items);
     const changed = !musicSnapshot || !snapshotsEqual(musicSnapshot, snap);
     if (changed) musicSnapshot = snap;
@@ -348,7 +599,7 @@ router.post('/library/music/refresh', async (req, res) => {
   res.json({ ok: true, count: (musicLibraryCache || []).length });
 });
 
-// === МЕТА (normGain и т.д.) ===
+// Обновление мета-полей трека (normGain и т.д.) — не трогает теги файла, только кэш
 const ALLOWED_META_FIELDS = ['normGain', 'liked', 'userNote'];
 router.patch('/library/music/meta', (req, res) => {
   try {
@@ -359,39 +610,74 @@ router.patch('/library/music/meta', (req, res) => {
     const track = musicLibraryCache.find(t => t.id === id);
     if (!track) return res.status(404).json({ error: 'трек не найден' });
 
+    // Обновляем только разрешённые поля
     for (const [k, v] of Object.entries(fields)) {
       if (ALLOWED_META_FIELDS.includes(k)) track[k] = v;
     }
     markMusicCacheDirty();
-    res.json({ ok: true });
-  } catch (e) {
+    res.json({ ok: true, id, updated: Object.keys(fields).filter(k => ALLOWED_META_FIELDS.includes(k)) });
+  } catch(e) {
     console.error('[PATCH /library/music/meta]', e);
-    res.status(500).json({ error: 'ошибка' });
+    res.status(500).json({ error: e.message });
   }
 });
 
-// === АНИМ МЕТА (для фронта) ===
+// ============================================================
+// ОБЛОЖКИ — с диска
+// ============================================================
+router.get('/cover/music/*', (req, res) => {
+  try {
+    const relativePath = decodeURIComponent(req.params[0]);
+    const base = coverCacheBase(relativePath);
+    for (const ext of ['.jpg', '.png']) {
+      if (fs.existsSync(base + ext)) {
+        res.setHeader('Content-Type', ext === '.png' ? 'image/png' : 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+        return fs.createReadStream(base + ext).pipe(res);
+      }
+    }
+    res.status(404).end();
+  } catch (err) {
+    console.error('[ОШИБКА /cover/music]', err);
+    res.status(500).end();
+  }
+});
+
+// ============================================================
+// ═══ АНИМ-ОБЛОЖКИ: API + стриминг ═══
+// ============================================================
+
 router.get('/library/anim-covers', (req, res) => {
   try {
     const map = scanAnimDir();
     const items = [];
     for (const [normName, info] of map) {
+      const matches = (musicLibraryCache || []).filter(t =>
+        norm(t.album) === normName || norm(t.title) === normName || norm(t.name) === normName
+      );
+      const matchedAlbums = [...new Set(matches.map(t => t.album).filter(Boolean))];
+      const matchedArtists = [...new Set(matches.map(t => t.artist).filter(Boolean))];
+      const matchTypes = [];
+      if (matches.some(t => norm(t.album) === normName)) matchTypes.push('album');
+      if (matches.some(t => norm(t.title) === normName)) matchTypes.push('title');
+      if (matches.some(t => norm(t.name) === normName && norm(t.album) !== normName && norm(t.title) !== normName)) matchTypes.push('filename');
       items.push({
-        normName,
-        filename: info.filename,
-        streamUrl: info.streamUrl,
-        type: info.type,
+        ...info,
+        name: normName,
+        matchedAlbums,
+        matchedArtists,
+        matchedTrackCount: matches.length,
+        matchTypes,
       });
     }
     res.json({ items });
-  } catch (e) {
-    res.json({ items: [] });
+  } catch (err) {
+    console.error('[ОШИБКА /library/anim-covers]', err);
+    res.status(500).json({ error: 'Ошибка сканирования anim-папки' });
   }
 });
 
-// === СТАТИКА ===
-router.use('/stream/video', express.static(VIDEO_DIR, { setHeaders: (res) => res.setHeader('Accept-Ranges', 'bytes') }));
-router.use('/stream/music', express.static(MUSIC_DIR, { setHeaders: (res) => res.setHeader('Accept-Ranges', 'bytes') }));
+// Стриминг файлов из ANIM_DIR
 router.use('/stream/anim', (req, res, next) => {
   const relPath = decodeURIComponent(req.path.replace(/^\//, ''));
   const absPath = path.join(ANIM_DIR, relPath);
@@ -400,23 +686,78 @@ router.use('/stream/anim', (req, res, next) => {
   if (!resolved.startsWith(animDirResolved + path.sep) && resolved !== animDirResolved) {
     return res.status(403).end();
   }
-  res.sendFile(resolved, { headers: { 'Accept-Ranges': 'bytes' } }, (err) => {
-    if (err) res.status(404).end();
-  });
-});
-
-// === ОБЛОЖКИ МУЗЫКИ ===
-router.get('/cover/music/*', (req, res) => {
-  const rel = decodeURIComponent(req.params[0] || '');
-  const base = coverCacheBase(rel);
-  for (const ext of ['.jpg', '.png']) {
-    const p = base + ext;
-    if (fs.existsSync(p)) return res.sendFile(p);
+  if (!fs.existsSync(resolved)) {
+    return res.status(404).end();
   }
-  res.status(404).end();
+  const ext = path.extname(resolved).toLowerCase();
+  if (ext === '.webm') res.setHeader('Content-Type', 'video/webm');
+  else if (ext === '.gif') res.setHeader('Content-Type', 'image/gif');
+  res.setHeader('Cache-Control', 'public, max-age=604800');
+  fs.createReadStream(resolved).pipe(res);
 });
 
-// Прогрев
-setTimeout(() => { console.log('[music] прогрев кэша...'); refreshMusicLibrary(); }, 1200);
+// Стриминг файлов-обложек из VIDEO_COVERS_DIR (см. блок выше)
+router.use('/cover/video', (req, res, next) => {
+  const relPath = decodeURIComponent(req.path.replace(/^\//, ''));
+  const absPath = path.join(VIDEO_COVERS_DIR, relPath);
+  const resolved = path.resolve(absPath);
+  const coversDirResolved = path.resolve(VIDEO_COVERS_DIR);
+  if (!resolved.startsWith(coversDirResolved + path.sep) && resolved !== coversDirResolved) {
+    return res.status(403).end();
+  }
+  if (!fs.existsSync(resolved)) return res.status(404).end();
+  const ext = path.extname(resolved).toLowerCase();
+  const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+  res.setHeader('Content-Type', mime);
+  res.setHeader('Cache-Control', 'public, max-age=604800');
+  fs.createReadStream(resolved).pipe(res);
+});
+
+// ============================================================
+// ДОБАВЛЕНО: ЛАЙКИ/ИЗБРАННОЕ — привязаны к аккаунту (JWT req.user),
+// а не к браузеру. Раньше "нравится" у треков хранилось только в
+// localStorage/IndexedDB на фронте (см. TRACK_LIKES_KEY в app.js) —
+// терялось при смене браузера/устройства даже под тем же логином.
+// ============================================================
+const { getLikes, setLike } = require('../lib/authStore');
+
+router.get('/library/likes', (req, res) => {
+  try {
+    if (!req.user || !req.user.username) return res.status(401).json({ error: 'Unauthorized' });
+    res.json({ likes: getLikes(req.user.username) });
+  } catch (e) {
+    console.error('[ОШИБКА /library/likes]', e);
+    res.status(500).json({ error: 'Не удалось получить лайки' });
+  }
+});
+
+router.post('/library/likes', (req, res) => {
+  try {
+    if (!req.user || !req.user.username) return res.status(401).json({ error: 'Unauthorized' });
+    const { type, id, state } = req.body || {};
+    if (!id || (type !== 'video' && type !== 'music')) {
+      return res.status(400).json({ error: 'Некорректные данные (нужны type: video|music и id)' });
+    }
+    const likes = setLike(req.user.username, type, id, Number(state) || 0);
+    if (!likes) return res.status(404).json({ error: 'Пользователь не найден' });
+    res.json({ ok: true, likes });
+  } catch (e) {
+    console.error('[ОШИБКА POST /library/likes]', e);
+    res.status(500).json({ error: 'Не удалось сохранить лайк' });
+  }
+});
+
+// ============================================================
+// СТРИМИНГ ФАЙЛОВ
+// ============================================================
+router.use('/stream/video', express.static(LIBRARY_VIDEO_DIR, {
+  setHeaders: (res) => res.setHeader('Accept-Ranges', 'bytes'),
+}));
+router.use('/stream/music', express.static(LIBRARY_MUSIC_DIR, {
+  setHeaders: (res) => res.setHeader('Accept-Ranges', 'bytes'),
+}));
+
+// Прогрев кэша при старте
+setTimeout(() => { console.log('[music] прогрев кэша...'); refreshMusicLibrary(); }, 1500);
 
 module.exports = router;

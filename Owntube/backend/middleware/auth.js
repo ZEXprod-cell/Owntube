@@ -12,6 +12,9 @@ const PROTECTED_PATHS = [
   '/library/music',
   '/library/anim-covers',
   '/library/music/meta',
+  // ДОБАВЛЕНО: лайки/избранное теперь привязаны к аккаунту (req.user.username),
+  // поэтому эндпоинт тоже должен требовать валидный JWT.
+  '/library/likes',
 ];
 
 module.exports = function authMiddleware(req, res, next) {
