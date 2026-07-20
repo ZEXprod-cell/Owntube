@@ -1,7 +1,7 @@
 // ══════════ СКРИПТ ДЛЯ НОВОЙ СКАЧИВАЛКИ В ХЕДЕРЕ ══════════
 
-// ⚠️ Тот же токен, что задан в backend/config.js (API_TOKEN / OWNTUBE_TOKEN)
-const API_TOKEN = 'ЗАМЕНИ_НА_СВОЙ_ДЛИННЫЙ_СЛУЧАЙНЫЙ_ТОКЕН';
+// ⚠️ ИСПРАВЛЕНО: убран захардкоженный API_TOKEN = 'ЗАМЕНИ_НА_СВОЙ...'
+// Теперь используется JWT-токен из auth-gate.js через window.owntubeAuthHeader().
 
 // === ПУТИ ПО УМОЛЧАНИЮ (изменено: audio → music) ===
 const DEFAULT_PATHS = {
@@ -64,7 +64,7 @@ async function startDownloadInline() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + API_TOKEN
+        ...window.owntubeAuthHeader()
       },
       body: JSON.stringify({
         url,
@@ -80,7 +80,8 @@ async function startDownloadInline() {
 
     if (res.status === 401) {
       text.textContent = '❌ Не авторизовано';
-      alert('Неверный токен доступа — проверь API_TOKEN в downloader.js и backend/config.js');
+      alert('Сессия истекла — войди заново');
+      if (window.owntubeLogout) window.owntubeLogout();
       return;
     }
 

@@ -5,8 +5,8 @@
   'use strict';
 
   const API = 'http://localhost:3001';
-  // ⚠️ Тот же токен, что в backend/config.js (API_TOKEN / OWNTUBE_TOKEN)
-  const API_TOKEN = 'ЗАМЕНИ_НА_СВОЙ_ДЛИННЫЙ_СЛУЧАЙНЫЙ_ТОКЕН';
+  // ⚠️ ИСПРАВЛЕНО: убран захардкоженный API_TOKEN = 'ЗАМЕНИ_НА_СВОЙ...'
+  // Теперь используется JWT-токен из auth-gate.js через window.owntubeAuthHeader().
 
   const navBtn = document.getElementById('serverLibBtn');
   const page = document.getElementById('serverLibPage');
@@ -55,9 +55,9 @@
     // ✅ /library/* теперь требует токен — добавлен заголовок Authorization.
     // Сам стриминг (streamUrl) заголовок не несёт и не должен — он открыт.
     const res = await fetch(`${API}/library/${kind}`, {
-      headers: { 'Authorization': 'Bearer ' + API_TOKEN }
+      headers: window.owntubeAuthHeader()
     });
-    if (res.status === 401) throw new Error('неверный токен доступа');
+    if (res.status === 401) throw new Error('Сессия истекла — войди заново');
     if (!res.ok) throw new Error('Сервер ответил ' + res.status);
     const data = await res.json();
     cache[kind] = data.items || [];
