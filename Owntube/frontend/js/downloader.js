@@ -68,7 +68,9 @@ async function startDownloadInline() {
   text.textContent = 'Запуск yt-dlp...';
 
   try {
-    const res = await fetch('http://localhost:3001/download', {
+    // Динамический адрес сервера (см. ту же правку в app.js/auth-gate.js) —
+    // важно для доступа по IP из локальной сети.
+    const res = await fetch(`http://${location.hostname}:3001/download`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -21,7 +21,10 @@
 (() => {
   'use strict';
 
-  const API = 'http://localhost:3001';
+  // Как и в app.js: адрес API берётся от хоста, с которого открыта страница,
+  // а не жёстко "localhost" — иначе при заходе по IP из локальной сети
+  // запросы логина/регистрации уходили бы не туда.
+  const API = `http://${location.hostname}:3001`;
   const STORAGE_KEY = 'owntube_jwt';
   const STORAGE_USER_KEY = 'owntube_username';
 

@@ -76,7 +76,12 @@ let tpVisible = false;
 let tpAlbum = null; // альбом открытый в trackPanel (artist|album)
  
 // ====================== SERVER INTEGRATION ======================
-const SERVER_API = 'http://localhost:3001';
+// ИСПРАВЛЕНИЕ: раньше был жёстко прописан 'http://localhost:3001'. При заходе
+// на фронтенд по IP из локальной сети (с другого устройства) 'localhost'
+// в браузере ЭТОГО устройства означает его собственную машину, а не сервер —
+// запросы к API вообще не доходили бы туда, куда нужно. Теперь адрес API
+// берётся от того же хоста/IP, с которого открыта сама страница.
+const SERVER_API = `http://${location.hostname}:3001`;
 // ⚠️ Токен больше не хранится статически — используется window.owntubeAuthHeader()
 // (предоставляется auth-gate.js)
 
@@ -1790,7 +1795,7 @@ function updateBreadcrumb(mode,artist,album){
 const BANNER_ROTATE_HOURS = 6;
 function bannerBust(){return Math.floor(Date.now()/(BANNER_ROTATE_HOURS*3600*1000));}
 
-const COVERS_BASE = 'http://localhost:3001/covers';
+const COVERS_BASE = `${SERVER_API}/covers`;
 function getArtistCoverUrl(name,type='profile'){
   return `${COVERS_BASE}/${encodeURIComponent(name)}_${type}.jpg?_rot=${bannerBust()}`;
 }
