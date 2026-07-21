@@ -193,6 +193,18 @@ const fmtSz=b=>!b?'':b<1048576?(b/1024).toFixed(0)+' КБ':b<1073741824?(b/10485
 const fmtDt=ts=>new Date(ts).toLocaleDateString('ru-RU',{day:'numeric',month:'short',year:'numeric'});
  
 const _defThumbCache=new Map();
+// ДОБАВЛЕНО: экранирование HTML для данных с диска (имена видео/треков,
+// теги ID3, названия артистов) перед вставкой через innerHTML.
+// Раньше эти строки шли в разметку как есть. Источник данных — не только
+// "свои" файлы: имя видео/трека формируется из ID3-тегов или из заголовка/
+// автора при скачивании через yt-dlp с произвольного URL (см. download.js,
+// шаблон именования "%(artist,uploader)s - %(title)s"), то есть содержимое
+// частично приходит из интернета. Сервер слушает 0.0.0.0 (доступен всем в
+// локальной сети) — вредоносное имя одного файла выполнилось бы в браузере
+// у КАЖДОГО, кто откроет библиотеку, а не только у скачавшего.
+function esc(s){
+  return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 function defThumb(name){
   if(_defThumbCache.has(name))return _defThumbCache.get(name);
   const c=document.createElement('canvas');c.width=160;c.height=90;
@@ -492,7 +504,7 @@ async function renderPage(){
       const thumb=TC.get(v.id)||v.thumbnail||v.coverUrl||defThumb(v.name);
       const badge=v.isServer ? `<div class="ct-badge ok">● сервер</div>` : (VS.has(v.id)?`<div class="ct-badge ok">● подключено</div>`:'');
       const ri=hist.includes(v.id)?`<div class="replay-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.67"/></svg></div>`:'';
-      card.innerHTML=`<div class="ct${v.vertical?' vert':''}">${animCoversEnabled&&v.animCoverUrl?animCoverHtml(v.animCoverUrl.startsWith('/')?SERVER_API+v.animCoverUrl:v.animCoverUrl,v.animCoverType):`<img src="${thumb}" alt="${v.name}" loading="lazy" id="thumb-${v.id}">`}<div class="cd">${fmtD(v.duration)}</div>${badge}${ri}</div><div class="ci"><div class="cit">${v.name}</div><div class="cm">${fmtSz(v.size)} • ${fmtDt(v.dateAdded)}</div></div>`;
+      card.innerHTML=`<div class="ct${v.vertical?' vert':''}">${animCoversEnabled&&v.animCoverUrl?animCoverHtml(v.animCoverUrl.startsWith('/')?SERVER_API+v.animCoverUrl:v.animCoverUrl,v.animCoverType):`<img src="${thumb}" alt="${esc(v.name)}" loading="lazy" id="thumb-${v.id}">`}<div class="cd">${fmtD(v.duration)}</div>${badge}${ri}</div><div class="ci"><div class="cit">${esc(v.name)}</div><div class="cm">${fmtSz(v.size)} • ${fmtDt(v.dateAdded)}</div></div>`;
       const ric=card.querySelector('.replay-icon');if(ric)ric.addEventListener('click',e=>{e.stopPropagation();openVid(v.id);});
       g.appendChild(card);if(thumbObs)thumbObs.observe(card);
     }
@@ -559,6 +571,18 @@ async function openVid(id) {
   document.getElementById('vpSize').textContent = '' + fmtSz(v.size || 0);
   document.getElementById('vpDate').textContent = '' + fmtDt(v.dateAdded || Date.now());
   const player = document.getElementById('player');
+  // ДОБАВЛЕНО: проверка поддержки формата ДО попытки воспроизведения.
+  // iOS Safari физически не умеет играть .webm/.mkv/.avi (в отличие от
+  // десктопных браузеров) — раньше такое видео просто вечно буферизовалось
+  // без вменяемой ошибки, что и выглядело как "зависание" на телефоне.
+  // Вотчдог зависаний (armStallTimer/recoverFromStall, см. ниже) в этом
+  // случае бесполезен: сети всё в порядке, дело в самом формате.
+  const extMimeMap = {'.mp4':'video/mp4','.m4v':'video/mp4','.mov':'video/quicktime','.webm':'video/webm','.mkv':'video/x-matroska','.avi':'video/x-msvideo'};
+  const extMatch = /\.[a-z0-9]+$/i.exec(v.name || '');
+  const guessedMime = extMatch ? extMimeMap[extMatch[0].toLowerCase()] : null;
+  if (guessedMime && player.canPlayType(guessedMime) === '') {
+    alert(`Этот браузер не умеет проигрывать формат ${extMatch[0]} (${v.name}). На iPhone/iPad это особенно часто случается с .webm/.mkv/.avi — попробуйте открыть на компьютере или переконвертировать в .mp4.`);
+  }
   player.src = '';
   player.src = url;
   player.preload = 'auto';
@@ -588,7 +612,7 @@ async function showEnd(){
   for(const v of recs){
     const t=v.isServer?(v.coverUrl||defThumb(v.name)):(TC.get(v.id)||v.thumbnail||defThumb(v.name));
     const d=document.createElement('div');d.className='end-card';
-    d.innerHTML=`<img src="${t}" onerror="this.src='${defThumb(v.name)}'"><h4>${v.name}</h4>`;
+    d.innerHTML=`<img src="${t}" onerror="this.src='${defThumb(v.name)}'"><h4>${esc(v.name)}</h4>`;
     d.onclick=()=>{document.getElementById('endScreen').classList.remove('show');switchVid(v.id);};
     grid.appendChild(d);
   }
@@ -602,7 +626,7 @@ async function renderRec(ex){
   for(const v of recs){
     const t=v.isServer?(v.coverUrl||defThumb(v.name)):(TC.get(v.id)||v.thumbnail||defThumb(v.name));
     const d=document.createElement('div');d.className='rc';
-    d.innerHTML=`<img class="rc-thumb" src="${t}" onerror="this.src='${defThumb(v.name)}'"><div class="ri"><h4>${v.name}</h4><p>${v.vertical?'↕':'↔'} ${fmtSz(v.size)}</p></div>`;
+    d.innerHTML=`<img class="rc-thumb" src="${t}" onerror="this.src='${defThumb(v.name)}'"><div class="ri"><h4>${esc(v.name)}</h4><p>${v.vertical?'↕':'↔'} ${fmtSz(v.size)}</p></div>`;
     d.onclick=()=>switchVid(v.id);rl.appendChild(d);
   }
 }
@@ -610,7 +634,7 @@ async function renderRec(ex){
 function loadCmts(id){
   const data=JSON.parse(localStorage.getItem('ot_cmt_'+id)||'[]');
   document.getElementById('cmtList').innerHTML=data.length
-    ?data.map(x=>`<div class="cmt"><div class="cmt-av" style="background:${COLORS[Math.abs(hsh(x.user))%COLORS.length]}">${x.user[0].toUpperCase()}</div><div class="cmt-body"><div class="cmt-hdr"><strong>${x.user}</strong><small>${new Date(x.date).toLocaleString('ru-RU')}</small></div><div class="cmt-txt">${x.text}</div></div></div>`).join('')
+    ?data.map(x=>`<div class="cmt"><div class="cmt-av" style="background:${COLORS[Math.abs(hsh(x.user))%COLORS.length]}">${esc(x.user[0].toUpperCase())}</div><div class="cmt-body"><div class="cmt-hdr"><strong>${esc(x.user)}</strong><small>${new Date(x.date).toLocaleString('ru-RU')}</small></div><div class="cmt-txt">${esc(x.text)}</div></div></div>`).join('')
     :'<p style="color:var(--t2)">Нет комментариев</p>';
 }
 function addCmt(){
@@ -802,9 +826,33 @@ function initPlayerControls(){
   };
   if(!('pictureInPictureEnabled' in document))btnPip.style.display='none';
 
+  // ИСПРАВЛЕНИЕ: "не врубается фуллскрин" на мобильных. Раньше здесь был
+  // только стандартный document.fullscreenElement / pb.requestFullscreen() —
+  // на iOS Safari у произвольных контейнеров (div) Fullscreen API не
+  // поддерживается вообще (в отличие от десктопных браузеров), запрос тихо
+  // проваливался в .catch(()=>{}) и ничего не происходило. Единственный
+  // рабочий способ на iOS — нативный полноэкранный режим самого <video>
+  // через webkitEnterFullscreen(). Заодно добавлены вендорные префиксы
+  // (webkit/moz/ms) для старых WebKit-браузеров и Android WebView.
+  function fsElement(){
+    return document.fullscreenElement||document.webkitFullscreenElement||
+           document.mozFullScreenElement||document.msFullscreenElement||null;
+  }
+  function requestFs(el){
+    const fn=el.requestFullscreen||el.webkitRequestFullscreen||el.webkitRequestFullScreen||el.mozRequestFullScreen||el.msRequestFullscreen;
+    if(fn)return fn.call(el);
+    return Promise.reject(new Error('Fullscreen API недоступен для этого элемента'));
+  }
+  function exitFs(){
+    const fn=document.exitFullscreen||document.webkitExitFullscreen||document.webkitCancelFullScreen||document.mozCancelFullScreen||document.msExitFullscreen;
+    if(fn)return fn.call(document);
+  }
   btnFs.onclick=()=>{
-    if(document.fullscreenElement){document.exitFullscreen();}
-    else{pb.requestFullscreen().catch(()=>{});}
+    if(fsElement()){exitFs();return;}
+    requestFs(pb).catch(()=>{
+      // Фолбэк для iOS Safari — фуллскрин только у самого <video>.
+      if(typeof player.webkitEnterFullscreen==='function'){player.webkitEnterFullscreen();}
+    });
   };
 
   document.addEventListener('keydown',e=>{
@@ -1650,7 +1698,7 @@ async function renderMusicPage(mode='artists', artistFilter=null, albumFilter=nu
       const profileUrl=getArtistCoverUrl(art.displayName,'profile');
       if(profileUrl){const img=document.createElement('img');img.src=profileUrl;img.style.cssText='width:100%;height:100%;object-fit:cover;border-radius:50%';img.onerror=()=>{img.remove();av.textContent=art.displayName.charAt(0).toUpperCase();};av.appendChild(img);}
       else{av.textContent=art.displayName.charAt(0).toUpperCase();}
-      card.innerHTML=`<div class="artist-name">${art.displayName}</div><div class="artist-count">${art.count} тр.</div>`;
+      card.innerHTML=`<div class="artist-name">${esc(art.displayName)}</div><div class="artist-count">${art.count} тр.</div>`;
       card.insertBefore(av,card.firstChild);card.onclick=()=>renderArtistPage(art.displayName,all);cont.appendChild(card);
     }
     grid.appendChild(cont);return;
@@ -1754,7 +1802,7 @@ function showTP(artist,album,tracks){
     item.className='tp-track'+(MP.trackId===t.id?' playing':'')+(getTrackLikeStateSync(t.id)===1?' liked':'');
     item.dataset.tid=t.id;
     const etn=effectiveTrackNumber(t);
-    item.innerHTML=`<span class="tp-track-num">${etn<999999?etn:'—'}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.title||t.name}</span>`;
+    item.innerHTML=`<span class="tp-track-num">${etn<999999?etn:'—'}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.title||t.name)}</span>`;
     
     // Устанавливаем очередь ТОЛЬКО при клике на трек
     item.onclick = () => {
@@ -1902,7 +1950,7 @@ function renderTracks(tracks,container){
     const num=etn<999999?`${etn}. `:'';
     const likeState=getTrackLikeStateSync(t.id);
     const likeBtnHtml=`<button class="mc-like-btn${likeState===1?' liked':''}${likeState===-1?' disliked':''}" data-id="${t.id}" title="Нравится">${likeState===1?ICONS.likeFilled:(likeState===-1?ICONS.dislikeFilled:ICONS.like)}</button>`;
-    card.innerHTML=`<div class="mc-art">${artHtml}<div class="mc-play-ov"><span>${ICONS[isP?'pause':'play']}</span></div>${likeBtnHtml}</div><div class="mc-info"><div class="mc-title">${num}${t.title||t.name}</div><div class="mc-artist">${t.artist||t.album||'—'}</div></div>`;
+    card.innerHTML=`<div class="mc-art">${artHtml}<div class="mc-play-ov"><span>${ICONS[isP?'pause':'play']}</span></div>${likeBtnHtml}</div><div class="mc-info"><div class="mc-title">${num}${esc(t.title||t.name)}</div><div class="mc-artist">${esc(t.artist||t.album||'—')}</div></div>`;
     
     // Устанавливаем очередь ТОЛЬКО при клике на трек
     card.onclick = () => {
@@ -2234,6 +2282,86 @@ async function preloadAnimCovers() {
 window.addEventListener('error', e => console.warn('[неважная ошибка]', e.message));
 window.addEventListener('unhandledrejection', e => console.warn('[неважная ошибка promise]', e.reason && e.reason.message || e.reason));
 
+// ══════════════════════════════════════════════════════════════
+// ДОБАВЛЕНО: мобильная адаптация интерфейса.
+//
+// Диагноз: в style.css на ширине ≤640px сайдбар полностью скрывается
+// (".side{display:none}"), но замены ему не было — на телефоне
+// физически нечем переключаться между Главная/Музыка/Скачать/История.
+// Это и есть главная причина "дизайн не оптимизирован под мобильные
+// устройства". По условию редактируем только .js (без новых файлов,
+// без правок index.html/style.css) — поэтому нужные стили и нижняя
+// навигация добавляются здесь через JS (создание <style> и DOM-узла),
+// по тому же принципу, что и профиль в шапке (см. auth-gate.js).
+// ══════════════════════════════════════════════════════════════
+function applyMobileEnhancements(){
+  if(document.getElementById('mobileEnhanceStyle'))return;
+
+  const style=document.createElement('style');
+  style.id='mobileEnhanceStyle';
+  style.textContent=`
+    @media (max-width:640px){
+      body{padding-bottom:calc(58px + env(safe-area-inset-bottom,0px));}
+      #mobileBottomNav{
+        position:fixed;left:0;right:0;bottom:0;z-index:99998;
+        display:flex;justify-content:space-around;align-items:stretch;
+        height:calc(56px + env(safe-area-inset-bottom,0px));
+        padding-bottom:env(safe-area-inset-bottom,0px);
+        background:#101014;border-top:1px solid #232329;
+      }
+      #mobileBottomNav .mbn-item{
+        display:flex;flex-direction:column;align-items:center;justify-content:center;
+        gap:3px;color:#888;font-size:10px;flex:1;
+        -webkit-tap-highlight-color:transparent;user-select:none;
+      }
+      #mobileBottomNav .mbn-item.on{color:#00ff85;}
+      #mobileBottomNav .mbn-dot{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:0;}
+      #mobileBottomNav .mbn-item.on .mbn-dot{opacity:1;}
+      /* Увеличенные зоны нажатия для контролов плеера — палец толще курсора */
+      .pc-btn,#pcFs,#pcPip,#pcVol{min-width:42px;min-height:42px;}
+      /* Шапка на узких экранах переносится, а не сжимается в кашу */
+      .hdr{flex-wrap:wrap;row-gap:8px;}
+      #authProfileBar{margin-left:auto;}
+    }
+    @media (min-width:641px){ #mobileBottomNav{display:none!important;} }
+  `;
+  document.head.appendChild(style);
+
+  const items=[
+    {p:'home',label:'Главная'},
+    {p:'vertical',label:'Шортсы'},
+    {p:'music',label:'Музыка'},
+    {p:'downloader',label:'Качать'},
+    {p:'history',label:'История'},
+  ];
+  const nav=document.createElement('div');
+  nav.id='mobileBottomNav';
+  nav.innerHTML=items.map(it=>`<div class="mbn-item" data-mp="${it.p}"><div class="mbn-dot"></div><span>${it.label}</span></div>`).join('');
+  document.body.appendChild(nav);
+
+  // Переиспользуем существующие пункты сайдбара — не дублируем логику
+  // переключения страниц, просто "нажимаем" за пользователя нужный .si.
+  nav.querySelectorAll('.mbn-item').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const target=document.querySelector(`.si[data-p="${btn.dataset.mp}"]`);
+      if(target)target.click();
+    });
+  });
+
+  const syncActive=()=>{
+    const activeSi=document.querySelector('.si.on');
+    const p=activeSi?activeSi.dataset.p:null;
+    nav.querySelectorAll('.mbn-item').forEach(x=>x.classList.toggle('on',x.dataset.mp===p));
+  };
+  syncActive();
+  // Подсветка синхронизируется и при переключении из других мест (клавиши,
+  // клики по карточкам и т.д.), а не только по клику в самой нижней панели.
+  document.querySelectorAll('.si').forEach(si=>{
+    new MutationObserver(syncActive).observe(si,{attributes:true,attributeFilter:['class']});
+  });
+}
+
+
 async function init(){
   // openDB() — единственный по-настоящему фатальный шаг: без локальной базы
   // сайт не может работать вообще, поэтому его ошибка ниже всё ещё показывает
@@ -2252,6 +2380,9 @@ async function init(){
 
   try{ initEvents();initMusicCtrl();initSearch();initTP();initPlayerControls(); }
   catch(e){ console.warn('[init] сбой инициализации UI-обработчиков (не критично):', e); }
+
+  try{ applyMobileEnhancements(); }
+  catch(e){ console.warn('[init] сбой мобильной адаптации (не критично):', e); }
 
   try{ await checkServerStatus(); }
   catch(e){ console.warn('[init] сбой проверки статуса сервера (не критично):', e); }

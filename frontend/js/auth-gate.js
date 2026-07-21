@@ -39,6 +39,13 @@
     location.reload();
   };
 
+  // ДОБАВЛЕНО: экранирование перед innerHTML — регистрация позволяет
+  // выбрать произвольный логин, который потом выводится в шапке всем,
+  // кто заходит с этого же браузера (см. renderProfileBar ниже).
+  function escHtml(s){
+    return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
   // ── ДОБАВЛЕНО: профиль в шапке (аватар + имя + «Выйти») ──────────
   function renderProfileBar() {
     const hdr = document.querySelector('.hdr');
@@ -55,12 +62,12 @@
       bar.style.cssText = 'display:flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0;padding-left:10px;';
       hdr.appendChild(bar);
     }
-    const initial = username.charAt(0).toUpperCase();
+    const initial = escHtml(username.charAt(0).toUpperCase());
     bar.innerHTML = `
       <div style="width:28px;height:28px;border-radius:50%;background:#00ff85;color:#000;
         display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;">${initial}</div>
-      <span title="${username}" style="color:#eee;font-size:13px;max-width:110px;overflow:hidden;
-        text-overflow:ellipsis;white-space:nowrap;">${username}</span>
+      <span title="${escHtml(username)}" style="color:#eee;font-size:13px;max-width:110px;overflow:hidden;
+        text-overflow:ellipsis;white-space:nowrap;">${escHtml(username)}</span>
       <button id="authLogoutBtn" style="background:transparent;border:1px solid #333;color:#aaa;
         padding:5px 10px;border-radius:7px;font-size:12px;cursor:pointer;transition:background .15s,color .15s;">Выйти</button>
     `;

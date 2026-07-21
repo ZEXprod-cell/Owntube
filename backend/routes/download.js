@@ -21,9 +21,26 @@ const ALLOWED_BITRATES = [64, 128, 192, 256, 320];
 const ALLOWED_DOWNLOAD_DIRS = [DEFAULT_DOWNLOADS_DIR, LIBRARY_VIDEO_DIR, LIBRARY_MUSIC_DIR]
   .map(d => path.resolve(d));
 
+// ИСПРАВЛЕНИЕ: на Windows файловая система нечувствительна к регистру, но
+// строгое сравнение resolved-путей (===) — чувствительно. Путь с другим
+// регистром букв (например, скопированный из другого места интерфейса),
+// хотя и указывает на ту же самую папку на диске, раньше отклонялся как
+// "недопустимая папка назначения". Сравниваем без учёта регистра на win32.
+function normDir(p) {
+  const r = path.resolve(p);
+  return process.platform === 'win32' ? r.toLowerCase() : r;
+}
+const ALLOWED_DOWNLOAD_DIRS_NORM = ALLOWED_DOWNLOAD_DIRS.map(normDir);
+
+// ДОБАВЛЕНО: разрешаем подпапки внутри разрешённых каталогов (например,
+// "F:\new DlB\кибитка" — подпапка внутри LIBRARY_VIDEO_DIR), а не только
+// точное совпадение с корнем. Раньше в такую подпапку скачать было нельзя —
+// isAllowedDownloadDir признавала только буквальный корневой путь.
 function isAllowedDownloadDir(dir) {
-  const resolved = path.resolve(dir);
-  return ALLOWED_DOWNLOAD_DIRS.some(allowed => resolved === allowed);
+  const resolved = normDir(dir);
+  return ALLOWED_DOWNLOAD_DIRS_NORM.some(
+    root => resolved === root || resolved.startsWith(root + (process.platform === 'win32' ? '\\' : '/'))
+  );
 }
 
 // (embedThumb больше не принимаем — параметр был мёртвым: обложка встраивается
@@ -63,7 +80,14 @@ function buildArgs({ type, quality, numbering, browser, dir, url, noPlaylist }) 
     }
   } else {
     const fmt = VIDEO_FORMATS[quality] || VIDEO_FORMATS.best;
-    args.push('-f', fmt, '--merge-output-format', 'mp4', '--write-thumbnail', '--no-embed-thumbnail');
+    args.push(
+      '-f', fmt, '--merge-output-format', 'mp4', '--write-thumbnail', '--no-embed-thumbnail',
+      // ДОБАВЛЕНО: запись автора и названия видео в метаданные файла
+      // (не только в имя файла) — title/artist-теги внутри самого mp4.
+      '--embed-metadata',
+      '--parse-metadata', '%(uploader,channel,artist|Неизвестно)s:%(meta_artist)s',
+      '--parse-metadata', '%(title)s:%(meta_title)s'
+    );
   }
 
   const nameTemplate = numbering
@@ -90,7 +114,12 @@ router.post('/download', async (req, res) => {
 
   const dir = path.resolve(outputDir);
   if (!isAllowedDownloadDir(dir)) {
-    return res.status(403).json({ error: 'Недопустимая папка назначения' });
+    console.warn('[download] отклонён путь:', dir, '| разрешены:', ALLOWED_DOWNLOAD_DIRS);
+    return res.status(403).json({
+      error: 'Недопустимая папка назначения',
+      received: dir,
+      allowed: ALLOWED_DOWNLOAD_DIRS,
+    });
   }
 
   const safeBrowser = ALLOWED_BROWSERS.includes(browser) ? browser : 'firefox';

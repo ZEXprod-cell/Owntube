@@ -32,7 +32,12 @@ module.exports = cors({
     } catch (e) { /* некорректный Origin — просто отклоняем ниже */ }
     cb(null, false);
   },
-  methods: ['GET', 'POST'],
+  // ИСПРАВЛЕНИЕ: фронт шлёт PATCH на /library/music/meta (сохранение
+  // нормализации громкости трека, см. app.js), а сервер обрабатывает его
+  // через router.patch(...) (library.js) — но раньше CORS разрешал только
+  // GET/POST. Preflight-запрос для PATCH не проходил, и сохранение гейна
+  // падало с сетевой ошибкой. Заодно добавлены PUT/DELETE на будущее.
+  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Range'],
   exposedHeaders: ['Content-Range', 'Content-Length', 'Accept-Ranges'],
   credentials: true

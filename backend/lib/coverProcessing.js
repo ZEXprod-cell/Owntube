@@ -52,10 +52,17 @@ async function postProcessThumbs(dir, newMp3Names, thumbMode) {
   if (thumbMode === 3 || thumbMode === '3') return;
 
   const rawThumbs = listFiles(dir, ['.jpg', '.jpeg', '.webp', '.png']);
+  // ИСПРАВЛЕНИЕ: раньше в конце функции удалялись ВСЕ картинки в папке без
+  // разбора (см. ниже) — включая файлы, вообще не относящиеся к этой
+  // закачке (обложки, положенные туда вручную, картинки из другой сессии
+  // загрузки). Теперь удаляются только сырые превью, которые эта функция
+  // сама только что использовала для встраивания обложки в mp3.
+  const usedThumbs = new Set();
 
   if (thumbMode === 1 || thumbMode === '1') {
     const first = rawThumbs[0];
     if (!first) return;
+    usedThumbs.add(first);
     const folderCover = path.join(dir, '_folder_cover_512.jpg');
     const ok = await processCover(path.join(dir, first), folderCover, 512);
     if (!ok) return;
@@ -68,6 +75,7 @@ async function postProcessThumbs(dir, newMp3Names, thumbMode) {
       const base = path.basename(name, path.extname(name));
       const rawCover = rawThumbs.find(t => path.basename(t, path.extname(t)) === base);
       if (!rawCover) continue;
+      usedThumbs.add(rawCover);
       const cropped = path.join(dir, base + '_cvr_512.jpg');
       const ok = await processCover(path.join(dir, rawCover), cropped, 512);
       if (ok) {
@@ -76,7 +84,7 @@ async function postProcessThumbs(dir, newMp3Names, thumbMode) {
       }
     }
   }
-  for (const t of listFiles(dir, ['.jpg', '.jpeg', '.webp', '.png'])) {
+  for (const t of usedThumbs) {
     try { fs.unlinkSync(path.join(dir, t)); } catch {}
   }
 }

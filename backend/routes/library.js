@@ -679,7 +679,9 @@ router.get('/library/anim-covers', (req, res) => {
 
 // Стриминг файлов из ANIM_DIR
 router.use('/stream/anim', (req, res, next) => {
-  const relPath = decodeURIComponent(req.path.replace(/^\//, ''));
+  let relPath;
+  try { relPath = decodeURIComponent(req.path.replace(/^\//, '')); }
+  catch (e) { return res.status(400).end('Некорректный путь'); }
   const absPath = path.join(ANIM_DIR, relPath);
   const resolved = path.resolve(absPath);
   const animDirResolved = path.resolve(ANIM_DIR);
@@ -698,7 +700,9 @@ router.use('/stream/anim', (req, res, next) => {
 
 // Стриминг файлов-обложек из VIDEO_COVERS_DIR (см. блок выше)
 router.use('/cover/video', (req, res, next) => {
-  const relPath = decodeURIComponent(req.path.replace(/^\//, ''));
+  let relPath;
+  try { relPath = decodeURIComponent(req.path.replace(/^\//, '')); }
+  catch (e) { return res.status(400).end('Некорректный путь'); }
   const absPath = path.join(VIDEO_COVERS_DIR, relPath);
   const resolved = path.resolve(absPath);
   const coversDirResolved = path.resolve(VIDEO_COVERS_DIR);
